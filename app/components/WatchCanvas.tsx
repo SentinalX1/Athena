@@ -14,7 +14,7 @@ function WatchScene() {
     <>
       {/* Studio Lighting Setup for Metal & Glass Reflections */}
       <ambientLight intensity={1.2} />
-      
+
       {/* Primary Key Light */}
       <directionalLight
         position={[5, 10, 7]}
@@ -23,10 +23,10 @@ function WatchScene() {
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0001}
       />
-      
+
       {/* Cool Rim / Back Light */}
       <directionalLight position={[-6, 4, -5]} intensity={1.5} color="#cce0ff" />
-      
+
       {/* Warm Fill Light */}
       <directionalLight position={[0, -4, 5]} intensity={1.0} color="#ffeedd" />
 

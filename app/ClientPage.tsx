@@ -3,7 +3,6 @@
 import dynamic from 'next/dynamic';
 import { Suspense, useEffect, useState } from 'react';
 
-// Dynamically import the Canvas so it never SSRs (Three.js is browser-only)
 const WatchCanvas = dynamic(() => import('./components/WatchCanvas'), {
   ssr: false,
 });

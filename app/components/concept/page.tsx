@@ -70,20 +70,29 @@ function WatchModel(props: Props) {
     const target = Math.min(1, Math.max(0, scrollY / winH));
 
     smooth.current = THREE.MathUtils.lerp(smooth.current, target, 1 - Math.pow(0.001, delta));
-    const p = smooth.current;
+    const p = smooth.current; // p is scroll progress from 0 (hero top) to 1 (scrolled 100vh)
 
     floatTime.current += delta;
     const idleFloat = Math.sin(floatTime.current * 0.8) * 0.018 * (1 - p);
 
-    groupRef.current.rotation.x = THREE.MathUtils.lerp(0, 0.96, p);
-    groupRef.current.rotation.y = THREE.MathUtils.lerp(0, 0.16, p);
-    groupRef.current.rotation.z = THREE.MathUtils.lerp(0, -0.07, p);
+    // ─── TILT CONTROLS (ROTATION IN RADIANS) ───────────────────────────
+    // rotation.x: Negative values tilt the top BACKWARD away from camera.
+    groupRef.current.rotation.x = THREE.MathUtils.lerp(0, -0.75, p);
 
+    // rotation.y: Side-to-side turn (yaw)
+    groupRef.current.rotation.y = THREE.MathUtils.lerp(0, 0.14, p);
+
+    // rotation.z: Slight twist/roll
+    groupRef.current.rotation.z = THREE.MathUtils.lerp(0, -0.05, p);
+
+    // ─── POSITION CONTROLS ─────────────────────────────────────────────
     groupRef.current.position.x = 0;
-    groupRef.current.position.y = THREE.MathUtils.lerp(-0.05, 0.20, p) + idleFloat;
-    groupRef.current.position.z = THREE.MathUtils.lerp(0, 0.65, p);
+    groupRef.current.position.y = THREE.MathUtils.lerp(-0.05, 0.05, p) + idleFloat;
+    groupRef.current.position.z = THREE.MathUtils.lerp(0, 0.40, p);
 
-    const s = THREE.MathUtils.lerp(3.45, 4.10, p);
+    // ─── ZOOM CONTROL (SCALE) ──────────────────────────────────────────
+    // Increases scale as you scroll down
+    const s = THREE.MathUtils.lerp(2.45, 3.00, p);
     groupRef.current.scale.set(s, s, s);
   });
 

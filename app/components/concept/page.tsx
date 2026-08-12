@@ -83,7 +83,7 @@ function WatchModel(props: Props) {
     groupRef.current.rotation.y = THREE.MathUtils.lerp(0, 0.14, p);
 
     // rotation.z: Slight twist/roll
-    groupRef.current.rotation.z = THREE.MathUtils.lerp(0, -0.05, p);
+    groupRef.current.rotation.z = THREE.MathUtils.lerp(0, 2, p);
 
     // ─── POSITION CONTROLS ─────────────────────────────────────────────
     groupRef.current.position.x = 0;

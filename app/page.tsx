@@ -1,69 +1,165 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React, { useEffect, useState, useRef, Suspense } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { Environment } from '@react-three/drei';
+import Lenis from 'lenis';
+import 'lenis/dist/lenis.css';
+
+import { smoothstep } from '@/lib/math';
+import { useResponsive } from '@/lib/useResponsive';
+import { AthenaLoadingScreen } from '@/app/components/loader/AthenaLoadingScreen';
+import { MobileFallbackScreen } from '@/app/components/mobile/MobileFallbackScreen';
+import { WatchModel } from '@/app/components/watch/WatchModel';
+import { Navbar } from '@/app/components/sections/Navbar';
+import { HeroSection } from '@/app/components/sections/HeroSection';
+import { TimepieceSection } from '@/app/components/sections/TimepieceSection';
+import { CraftsmanshipSection } from '@/app/components/sections/CraftsmanshipSection';
+import { ComingSoonSection } from '@/app/components/sections/ComingSoonSection';
+
+export default function HomePage() {
+  const [scrollY, setScrollY] = useState(0);
+  const [winH, setWinH] = useState(1);
+  const [isWatchLoaded, setIsWatchLoaded] = useState(false);
+  const [isLoaderComplete, setIsLoaderComplete] = useState(false);
+  const [isSessionCached, setIsSessionCached] = useState(false);
+  const lenisRef = useRef<Lenis | null>(null);
+
+  // Check if the user has already visited in this session — skip loader on reload
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const alreadyLoaded = sessionStorage.getItem('athena_loaded') === 'true';
+      if (alreadyLoaded) {
+        setIsSessionCached(true);
+        setIsLoaderComplete(true);
+      }
+    }
+  }, []);
+
+  // Dynamic responsive detection (< 1024px viewport width)
+  const { isMobile } = useResponsive();
+
+  // Lenis Smooth Scroll Engine
+  useEffect(() => {
+    if (isMobile) return;
+
+    const html = document.documentElement;
+    const body = document.body;
+    html.style.overflow = 'auto';
+    body.style.overflow = 'auto';
+
+    const onResize = () => setWinH(window.innerHeight || 1);
+    onResize();
+    window.addEventListener('resize', onResize);
+
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      orientation: 'vertical',
+      gestureOrientation: 'vertical',
+      smoothWheel: true,
+      wheelMultiplier: 1,
+      touchMultiplier: 2,
+    });
+
+    lenisRef.current = lenis;
+
+    lenis.on('scroll', (e: { scroll: number }) => {
+      setScrollY(e.scroll);
+    });
+
+    setScrollY(window.scrollY);
+
+    let rafId: number;
+    function raf(time: number) {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    }
+    rafId = requestAnimationFrame(raf);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+      window.removeEventListener('resize', onResize);
+    };
+  }, [isMobile]);
+
+  // Lock scrolling during loading sequence
+  useEffect(() => {
+    if (!isLoaderComplete && lenisRef.current) {
+      lenisRef.current.stop();
+    } else if (isLoaderComplete && lenisRef.current) {
+      lenisRef.current.start();
+    }
+  }, [isLoaderComplete]);
+
+  // Render mobile/tablet fallback if screen is under 1024px
+  if (isMobile === true) {
+    return <MobileFallbackScreen />;
+  }
+
+  const scrollRaw = scrollY / (winH || 1);
+
+  // Synchronized HTML Opacity Thresholds
+  const heroP = smoothstep(0.0, 0.4, scrollRaw);
+  const timepieceP = smoothstep(0.6, 1.0, scrollRaw) * (1 - smoothstep(1.4, 1.8, scrollRaw));
+  const craftP = smoothstep(1.6, 2.0, scrollRaw) * (1 - smoothstep(2.4, 2.8, scrollRaw));
+  const comingSoonP = smoothstep(2.6, 3.0, scrollRaw);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="relative w-full" style={{ fontFamily: 'Georgia, serif' }}>
+      {/* Official Iris Aperture Loading Screen (Only shown on first visit) */}
+      {!isSessionCached && (
+        <AthenaLoadingScreen
+          isWatchLoaded={isWatchLoaded}
+          onComplete={() => {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('athena_loaded', 'true');
+            }
+            setIsLoaderComplete(true);
+          }}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+      )}
+
+      {/* Fixed 3D WebGL Canvas */}
+      <div className="fixed inset-0 z-40 pointer-events-none">
+        <Canvas camera={{ position: [0, 0, 2.5], fov: 40 }} style={{ position: 'absolute', inset: 0 }}>
+          <ambientLight intensity={0.8} />
+          <directionalLight position={[4, 8, 5]} intensity={1.6} color="#FFFFFF" />
+          <directionalLight position={[-4, -2, -3]} intensity={0.4} color="#C8D8FF" />
+          <pointLight position={[0, 1, 2.5]} intensity={0.8} color="#FFF8F0" />
+          <Environment preset="city" />
+          <Suspense fallback={null}>
+            <WatchModel
+              scrollRaw={scrollRaw}
+              isLoaderComplete={isLoaderComplete}
+              onModelReady={() => setIsWatchLoaded(true)}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          </Suspense>
+        </Canvas>
+      </div>
+
+      {/* Fixed Luxury Navigation */}
+      <Navbar isVisible={isLoaderComplete} />
+
+      {/* Section 1: Hero */}
+      <HeroSection heroP={heroP} />
+
+      {/* Section 2: The Timepiece */}
+      <TimepieceSection timepieceP={timepieceP} />
+
+      {/* Section 3: Craftsmanship */}
+      <CraftsmanshipSection craftP={craftP} />
+
+      {/* Section 4: Coming Soon */}
+      <ComingSoonSection comingSoonP={comingSoonP} />
+
+      <style>{`
+        @keyframes ctaBounce {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(5px); }
+        }
+      `}</style>
     </div>
   );
 }

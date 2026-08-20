@@ -25,25 +25,20 @@ const FRAME_PATHS = Array.from({ length: TOTAL_FRAMES }, (_, i) => {
   return `/Loader/frame_${padded}_delay-0.03s.png`;
 });
 
-// Kinetic Frame Player (Alpha Transparency + Tight Crop)
-function KineticFramePlayer({ size = 150 }: { size?: number }) {
+// KineticFramePlayer receives pre-baked GPU bitmaps from parent — zero CPU in rAF loop.
+function KineticFramePlayer({
+  size = 150,
+  bitmaps,
+}: {
+  size?: number;
+  bitmaps: (ImageBitmap | null)[];
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const imagesRef = useRef<HTMLImageElement[]>([]);
-
-  useEffect(() => {
-    const loadedImages: HTMLImageElement[] = [];
-    FRAME_PATHS.forEach((path, index) => {
-      const img = new Image();
-      img.src = path;
-      loadedImages[index] = img;
-    });
-    imagesRef.current = loadedImages;
-  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     let animId: number;
@@ -52,63 +47,34 @@ function KineticFramePlayer({ size = 150 }: { size?: number }) {
 
     const render = (now: number) => {
       const delta = now - lastTime;
-
       if (delta >= FRAME_DURATION) {
-        const framesToAdvance = Math.floor(delta / FRAME_DURATION);
-        currentFrame = (currentFrame + framesToAdvance) % TOTAL_FRAMES;
+        currentFrame = (currentFrame + Math.floor(delta / FRAME_DURATION)) % TOTAL_FRAMES;
         lastTime = now - (delta % FRAME_DURATION);
-
-        const img = imagesRef.current[currentFrame];
-        if (img && img.complete && img.naturalWidth > 0) {
-          const cw = canvas.width;
-          const ch = canvas.height;
-          ctx.clearRect(0, 0, cw, ch);
-
-          const cropSize = Math.min(img.naturalWidth, img.naturalHeight) * 0.48;
-          const sx = (img.naturalWidth - cropSize) / 2;
-          const sy = (img.naturalHeight - cropSize) / 2;
-
-          ctx.drawImage(img, sx, sy, cropSize, cropSize, 0, 0, cw, ch);
-
-          const imgData = ctx.getImageData(0, 0, cw, ch);
-          const data = imgData.data;
-          for (let i = 0; i < data.length; i += 4) {
-            const luminance = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-            if (luminance < 25) {
-              data[i + 3] = 0;
-            } else {
-              data[i + 3] = Math.min(255, (luminance / 220) * 255);
-            }
-          }
-          ctx.putImageData(imgData, 0, 0);
+        const bmp = bitmaps[currentFrame];
+        if (bmp) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
         }
       }
-
       animId = requestAnimationFrame(render);
     };
 
     animId = requestAnimationFrame(render);
-
-    return () => {
-      cancelAnimationFrame(animId);
-    };
-  }, []);
+    return () => cancelAnimationFrame(animId);
+  }, [bitmaps]);
 
   return (
     <canvas
       ref={canvasRef}
       width={300}
       height={300}
-      style={{
-        width: `${size}px`,
-        height: `${size}px`,
-      }}
+      style={{ width: `${size}px`, height: `${size}px` }}
       className="pointer-events-none block"
     />
   );
 }
 
-// Fullscreen Iris Aperture Loading Screen
+// Final Production Loading Screen - Removed percentage counter
 function AthenaLoadingScreen({
   isWatchLoaded,
   onComplete,
@@ -116,45 +82,111 @@ function AthenaLoadingScreen({
   isWatchLoaded: boolean;
   onComplete: () => void;
 }) {
-  const [isExiting, setIsExiting] = useState(false);
-  const [hasUnmounted, setHasUnmounted] = useState(false);
-  const startTime = useRef(performance.now());
+  // phase: 'preload' | 'spinning' | 'exiting' | 'done'
+  const [phase, setPhase] = useState<'preload' | 'spinning' | 'exiting' | 'done'>('preload');
+  const [bitmaps, setBitmaps] = useState<(ImageBitmap | null)[]>(
+    () => new Array(TOTAL_FRAMES).fill(null)
+  );
 
-  useEffect(() => {
-    if (!isWatchLoaded) return;
+  // Track whether frames AND model are both ready
+  const framesReadyRef = useRef(false);
+  const watchReadyRef = useRef(false);
+  const spinStartTimeRef = useRef(0);
 
-    // Ensure the kinetic loader plays gracefully for at least 1.8s
-    const elapsed = performance.now() - startTime.current;
-    const remainingDelay = Math.max(0, 1800 - elapsed);
-
-    const exitTimer = setTimeout(() => {
-      setIsExiting(true);
-
-      // Once the iris aperture finishes closing (1.15s), notify parent
-      const finishTimer = setTimeout(() => {
-        setHasUnmounted(true);
+  // Attempt iris close — only if both frames and watch are ready,
+  // and spinner has played for at least 900ms
+  const tryTriggerExit = () => {
+    if (!framesReadyRef.current || !watchReadyRef.current) return;
+    const spinElapsed = performance.now() - spinStartTimeRef.current;
+    const delay = Math.max(0, 900 - spinElapsed);
+    setTimeout(() => {
+      setPhase('exiting');
+      setTimeout(() => {
+        setPhase('done');
         onComplete();
       }, 1150);
+    }, delay);
+  };
 
-      return () => clearTimeout(finishTimer);
-    }, remainingDelay);
+  // Phase 1: Preload all 91 frames into GPU ImageBitmap objects
+  useEffect(() => {
+    let cancelled = false;
+    let loadedCount = 0;
+    const newBitmaps: (ImageBitmap | null)[] = new Array(TOTAL_FRAMES).fill(null);
 
-    return () => clearTimeout(exitTimer);
-  }, [isWatchLoaded, onComplete]);
+    const onFrameReady = () => {
+      loadedCount += 1;
 
-  if (hasUnmounted) return null;
+      if (loadedCount === TOTAL_FRAMES) {
+        if (cancelled) return;
+        setBitmaps([...newBitmaps]);
+        framesReadyRef.current = true;
+        spinStartTimeRef.current = performance.now();
+        if (!cancelled) {
+          setPhase('spinning');
+          tryTriggerExit();
+        }
+      }
+    };
+
+    FRAME_PATHS.forEach((path, index) => {
+      const img = new Image();
+      img.src = path;
+      img
+        .decode()
+        .then(() => {
+          if (cancelled || img.naturalWidth <= 0) { onFrameReady(); return; }
+
+          const cropSize = Math.min(img.naturalWidth, img.naturalHeight) * 0.48;
+          const sx = (img.naturalWidth - cropSize) / 2;
+          const sy = (img.naturalHeight - cropSize) / 2;
+
+          const offscreen = new OffscreenCanvas(300, 300);
+          const offCtx = offscreen.getContext('2d') as OffscreenCanvasRenderingContext2D;
+          offCtx.drawImage(img, sx, sy, cropSize, cropSize, 0, 0, 300, 300);
+
+          const imgData = offCtx.getImageData(0, 0, 300, 300);
+          const d = imgData.data;
+          for (let i = 0; i < d.length; i += 4) {
+            const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+            d[i + 3] = lum < 25 ? 0 : Math.min(255, (lum / 220) * 255);
+          }
+          offCtx.putImageData(imgData, 0, 0);
+
+          createImageBitmap(offscreen)
+            .then((bmp) => {
+              if (!cancelled) newBitmaps[index] = bmp;
+              onFrameReady();
+            })
+            .catch(() => onFrameReady());
+        })
+        .catch(() => onFrameReady());
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Phase 2 trigger: watch becomes ready => try to close
+  useEffect(() => {
+    if (!isWatchLoaded) return;
+    watchReadyRef.current = true;
+    tryTriggerExit();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isWatchLoaded]);
+
+  if (phase === 'done') return null;
 
   return (
     <div
       className="fixed inset-0 z-[100] pointer-events-none overflow-hidden select-none"
       style={{
-        clipPath: isExiting ? 'circle(0% at 50% 50%)' : 'circle(150% at 50% 50%)',
+        clipPath: phase === 'exiting' ? 'circle(0% at 50% 50%)' : 'circle(150% at 50% 50%)',
         transition: 'clip-path 1.15s cubic-bezier(0.77, 0, 0.175, 1)',
       }}
     >
       {/* Caustic Sapphire Background */}
       <div className="absolute inset-0 bg-[#040407]">
-        {/* Soft breathing caustic light pools */}
         <div
           className="absolute inset-0 opacity-45 animate-pulse"
           style={{
@@ -166,8 +198,6 @@ function AthenaLoadingScreen({
             `,
           }}
         />
-
-        {/* Prismatic Shimmer Sheen */}
         <div
           className="absolute inset-0 opacity-30"
           style={{
@@ -175,8 +205,6 @@ function AthenaLoadingScreen({
             filter: 'blur(50px)',
           }}
         />
-
-        {/* High-Fidelity 35mm Film Grain Overlay */}
         <div
           className="absolute inset-0 opacity-35"
           style={{
@@ -185,23 +213,23 @@ function AthenaLoadingScreen({
             backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
           }}
         />
-
-        {/* Deep Edge Vignette */}
         <div
           className="absolute inset-0"
-          style={{
-            background: 'radial-gradient(circle at 50% 50%, transparent 32%, rgba(2, 2, 4, 0.88) 100%)',
-          }}
+          style={{ background: 'radial-gradient(circle at 50% 50%, transparent 32%, rgba(2, 2, 4, 0.88) 100%)' }}
         />
       </div>
 
-      {/* Center 27-Dot Kinetic Cluster */}
+      {/* Kinetic spinner — fades in once all 91 frames are in VRAM */}
       <div
-        className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ease-[cubic-bezier(0.7,0,0.3,1)] ${
-          isExiting ? 'scale-75 opacity-0' : 'scale-100 opacity-100'
+        className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          phase === 'spinning'
+            ? 'opacity-100 scale-100'
+            : phase === 'exiting'
+            ? 'opacity-0 scale-75'
+            : 'opacity-0 scale-75 pointer-events-none'
         }`}
       >
-        <KineticFramePlayer size={150} />
+        <KineticFramePlayer size={150} bitmaps={bitmaps} />
       </div>
     </div>
   );
@@ -229,7 +257,7 @@ const START_MINUTE = 10;         // 10 minutes mark (Minute hand at 2 o'clock)
 const START_SECOND = 30;         // 30 seconds mark (Second hand at 6 o'clock)
 
 const HOLD_DURATION = 0.25;  // Hold the 10:10:30 catalog pose for 0.25s after reveal
-const SWEEP_DURATION = 2.20; // Smoothly rotate to user's local time over 2.2s
+const SWEEP_DURATION = 2.10; // Smoothly rotate to user's local time over 2.1s
 
 function applyHandRotations(
   hr: number,
@@ -507,9 +535,8 @@ export default function HomePage() {
 
       {/* Fixed Navbar */}
       <header
-        className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-8 py-7 mix-blend-difference text-white transition-opacity duration-700 ${
-          isLoaderComplete ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-8 py-7 mix-blend-difference text-white transition-opacity duration-700 ${isLoaderComplete ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
         style={{ maxWidth: '1400px', margin: '0 auto' }}
       >
         <span style={{ fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.28em' }}>ATHENA</span>

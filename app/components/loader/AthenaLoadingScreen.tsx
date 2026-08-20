@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { TOTAL_FRAMES, FRAME_PATHS } from '@/lib/constants';
+import { TOTAL_FRAMES, FRAME_DURATION } from '@/lib/constants';
 import { KineticFramePlayer } from './KineticFramePlayer';
 
 interface AthenaLoadingScreenProps {
@@ -11,40 +11,20 @@ interface AthenaLoadingScreenProps {
 
 /**
  * Fullscreen Iris Aperture Loading Screen:
- * - Silently decodes and pre-bakes all 91 frames into GPU ImageBitmap memory on the Caustic Sapphire atmosphere.
- * - Smoothly blooms into the kinetic 27-dot spinner once all bitmaps are in VRAM.
- * - Contracts inward via Iris Aperture reveal when both frames and 3D watch are fully ready.
+ * - Plays the 91-frame kinetic dot matrix from a single 200 KB sprite sheet.
+ * - Displays Frame 00 instantly on mount (0ms blank screen).
+ * - Guarantees at least one complete kinetic cycle before closing so the animation finishes gracefully.
+ * - Contracts smoothly via Iris Aperture reveal when the 3D watch is ready in the background.
  */
 export function AthenaLoadingScreen({
   isWatchLoaded,
   onComplete,
 }: AthenaLoadingScreenProps) {
-  const [phase, setPhase] = useState<'preload' | 'spinning' | 'exiting' | 'done'>('preload');
-  const [bitmaps, setBitmaps] = useState<(ImageBitmap | null)[]>(
-    () => new Array(TOTAL_FRAMES).fill(null)
-  );
+  const [phase, setPhase] = useState<'active' | 'exiting' | 'done'>('active');
 
-  const framesReadyRef = useRef(false);
-  const watchReadyRef = useRef(false);
-  const spinStartTimeRef = useRef(0);
+  const startTimeRef = useRef<number>(0);
+  const exitTriggeredRef = useRef(false);
 
-  const tryTriggerExit = () => {
-    if (!framesReadyRef.current || !watchReadyRef.current) return;
-    const spinElapsed = performance.now() - spinStartTimeRef.current;
-    const delay = Math.max(0, 900 - spinElapsed);
-    setTimeout(() => {
-      setPhase('exiting');
-      setTimeout(() => {
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('athena_loaded', 'true');
-        }
-        setPhase('done');
-        onComplete();
-      }, 1150);
-    }, delay);
-  };
-
-  // Phase 1: Preload all 91 frames into GPU ImageBitmap objects
   useEffect(() => {
     // Check if session is already cached
     if (typeof window !== 'undefined' && sessionStorage.getItem('athena_loaded') === 'true') {
@@ -53,75 +33,32 @@ export function AthenaLoadingScreen({
       return;
     }
 
-    let cancelled = false;
-    let loadedCount = 0;
-    const newBitmaps: (ImageBitmap | null)[] = new Array(TOTAL_FRAMES).fill(null);
+    startTimeRef.current = performance.now();
+  }, [onComplete]);
 
-    const onFrameReady = () => {
-      loadedCount += 1;
-
-      if (loadedCount === TOTAL_FRAMES) {
-        if (cancelled) return;
-        setBitmaps([...newBitmaps]);
-        framesReadyRef.current = true;
-        spinStartTimeRef.current = performance.now();
-        if (!cancelled) {
-          setPhase('spinning');
-          tryTriggerExit();
-        }
-      }
-    };
-
-    FRAME_PATHS.forEach((path, index) => {
-      const img = new Image();
-      img.src = path;
-      img
-        .decode()
-        .then(() => {
-          if (cancelled || img.naturalWidth <= 0) {
-            onFrameReady();
-            return;
-          }
-
-          const cropSize = Math.min(img.naturalWidth, img.naturalHeight) * 0.48;
-          const sx = (img.naturalWidth - cropSize) / 2;
-          const sy = (img.naturalHeight - cropSize) / 2;
-
-          const offscreen = new OffscreenCanvas(300, 300);
-          const offCtx = offscreen.getContext('2d') as OffscreenCanvasRenderingContext2D;
-          offCtx.drawImage(img, sx, sy, cropSize, cropSize, 0, 0, 300, 300);
-
-          const imgData = offCtx.getImageData(0, 0, 300, 300);
-          const d = imgData.data;
-          for (let i = 0; i < d.length; i += 4) {
-            const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-            d[i + 3] = lum < 25 ? 0 : Math.min(255, (lum / 220) * 255);
-          }
-          offCtx.putImageData(imgData, 0, 0);
-
-          createImageBitmap(offscreen)
-            .then((bmp) => {
-              if (!cancelled) newBitmaps[index] = bmp;
-              onFrameReady();
-            })
-            .catch(() => onFrameReady());
-        })
-        .catch(() => onFrameReady());
-    });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Phase 2 trigger: watch model is ready => try exit
+  // Exit trigger: ensure at least 1 full animation cycle (~2.73s) before closing
   useEffect(() => {
-    if (!isWatchLoaded) return;
-    watchReadyRef.current = true;
-    tryTriggerExit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isWatchLoaded]);
+    if (!isWatchLoaded || exitTriggeredRef.current || phase !== 'active') return;
+
+    const minCycleDuration = TOTAL_FRAMES * FRAME_DURATION; // 91 * 30ms = 2730ms
+    const elapsed = performance.now() - startTimeRef.current;
+    const remainingDelay = Math.max(0, minCycleDuration - elapsed);
+
+    exitTriggeredRef.current = true;
+
+    const timer = setTimeout(() => {
+      setPhase('exiting');
+      setTimeout(() => {
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('athena_loaded', 'true');
+        }
+        setPhase('done');
+        onComplete();
+      }, 1150);
+    }, remainingDelay);
+
+    return () => clearTimeout(timer);
+  }, [isWatchLoaded, phase, onComplete]);
 
   if (phase === 'done') return null;
 
@@ -171,17 +108,15 @@ export function AthenaLoadingScreen({
         />
       </div>
 
-      {/* Kinetic spinner — fades in once all 91 frames are in VRAM */}
+      {/* Center Kinetic Dot Matrix — Clean & Instant */}
       <div
         className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          phase === 'spinning'
+          phase === 'active'
             ? 'opacity-100 scale-100'
-            : phase === 'exiting'
-            ? 'opacity-0 scale-75'
-            : 'opacity-0 scale-75 pointer-events-none'
+            : 'opacity-0 scale-75'
         }`}
       >
-        <KineticFramePlayer size={150} bitmaps={bitmaps} />
+        <KineticFramePlayer size={150} />
       </div>
     </div>
   );

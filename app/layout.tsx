@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Athena – Timepieces Redefined',
+  title: 'Athena - Timepieces Redefined',
   description:
-    'The Athena automatic watch – precision Swiss-grade movement with real-time 3D visualization.',
+    'The Athena automatic watch - precision Swiss-grade movement with real-time 3D visualization.',
 };
 
 export default function RootLayout({

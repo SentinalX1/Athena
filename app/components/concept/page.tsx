@@ -16,12 +16,46 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+interface HandQuaternions {
+  hour: THREE.Quaternion;
+  minute: THREE.Quaternion;
+  second: THREE.Quaternion;
+}
+
+interface WatchHands {
+  hourHand?: THREE.Object3D;
+  minuteHand?: THREE.Object3D;
+  secondHand?: THREE.Object3D;
+}
+
+function syncClockHands(date: Date, hands: WatchHands, initQuats: HandQuaternions) {
+  const sec = date.getSeconds() + date.getMilliseconds() / 1000;
+  const min = date.getMinutes() + sec / 60;
+  const hr = (date.getHours() % 12) + date.getMinutes() / 60;
+
+  const BAKED_HOUR = 10 + 10 / 60;
+  const BAKED_MINUTE = 10 + 40 / 60;
+  const BAKED_SECOND = 40;
+
+  if (hands.hourHand) {
+    _qDelta.setFromAxisAngle(_axis, -(((hr - BAKED_HOUR) / 12) * Math.PI * 2));
+    hands.hourHand.quaternion.multiplyQuaternions(initQuats.hour, _qDelta);
+  }
+  if (hands.minuteHand) {
+    _qDelta.setFromAxisAngle(_axis, -(((min - BAKED_MINUTE) / 60) * Math.PI * 2));
+    hands.minuteHand.quaternion.multiplyQuaternions(initQuats.minute, _qDelta);
+  }
+  if (hands.secondHand) {
+    _qDelta.setFromAxisAngle(_axis, -(((sec - BAKED_SECOND) / 60) * Math.PI * 2));
+    hands.secondHand.quaternion.multiplyQuaternions(initQuats.second, _qDelta);
+  }
+}
+
 type WatchProps = ThreeElements['group'] & { scrollRaw: number };
 
 // 3D Watch Component
 function WatchModel({ scrollRaw, ...props }: WatchProps) {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
 
   const { scene } = useGLTF('/models/AthenaWatch.glb');
   const groupRef = useRef<THREE.Group>(null);
@@ -37,14 +71,23 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
     scene.userData.centered = true;
   }, [scene]);
 
-  const initQ = useRef<{ hour: THREE.Quaternion; minute: THREE.Quaternion; second: THREE.Quaternion } | null>(null);
+  const initQ = useRef<HandQuaternions | null>(null);
   if (!initQ.current && hourHand && minuteHand && secondHand) {
     initQ.current = {
       hour: hourHand.quaternion.clone(),
       minute: minuteHand.quaternion.clone(),
       second: secondHand.quaternion.clone(),
     };
+    // Immediate time revalidation on initial load/mount
+    syncClockHands(new Date(), { hourHand, minuteHand, secondHand }, initQ.current);
   }
+
+  useEffect(() => {
+    setMounted(true);
+    if (initQ.current && hourHand && minuteHand && secondHand) {
+      syncClockHands(new Date(), { hourHand, minuteHand, secondHand }, initQ.current);
+    }
+  }, [hourHand, minuteHand, secondHand]);
 
   const smoothRaw = useRef(0);
   const floatTime = useRef(0);
@@ -52,19 +95,8 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
   useFrame((_, delta) => {
     if (!mounted || !initQ.current || !groupRef.current) return;
 
-    // Clock hands synchronization
-    const now = new Date();
-    const sec = now.getSeconds() + now.getMilliseconds() / 1000;
-    const min = now.getMinutes() + sec / 60;
-    const hr = (now.getHours() % 12) + now.getMinutes() / 60;
-
-    const BAKED_HOUR = 10 + 10 / 60;
-    const BAKED_MINUTE = 10 + 40 / 60;
-    const BAKED_SECOND = 40;
-
-    if (hourHand) { _qDelta.setFromAxisAngle(_axis, -(((hr - BAKED_HOUR) / 12) * Math.PI * 2)); hourHand.quaternion.multiplyQuaternions(initQ.current.hour, _qDelta); }
-    if (minuteHand) { _qDelta.setFromAxisAngle(_axis, -(((min - BAKED_MINUTE) / 60) * Math.PI * 2)); minuteHand.quaternion.multiplyQuaternions(initQ.current.minute, _qDelta); }
-    if (secondHand) { _qDelta.setFromAxisAngle(_axis, -(((sec - BAKED_SECOND) / 60) * Math.PI * 2)); secondHand.quaternion.multiplyQuaternions(initQ.current.second, _qDelta); }
+    // Continuous clock synchronization
+    syncClockHands(new Date(), { hourHand, minuteHand, secondHand }, initQ.current);
 
     // Smooth scroll interpolation
     smoothRaw.current = THREE.MathUtils.lerp(smoothRaw.current, scrollRaw, 1 - Math.pow(0.0005, delta));

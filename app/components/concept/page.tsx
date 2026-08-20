@@ -36,8 +36,8 @@ const START_HOUR = 10 + 10 / 60; // 10:10 pose (Hour hand at 10)
 const START_MINUTE = 10;         // 10 minutes mark (Minute hand at 2 o'clock)
 const START_SECOND = 30;         // 30 seconds mark (Second hand at 6 o'clock)
 
-const HOLD_DURATION = 0.55; // Hold the 10:10:30 catalog pose for 0.55s
-const SWEEP_DURATION = 1.35; // Smoothly rotate to user's local time over 1.35s
+const HOLD_DURATION = 0.75; // Hold the 10:10:30 catalog pose for 0.65s
+const SWEEP_DURATION = 2.05; // Smoothly rotate to user's local time over 2.2s
 
 function applyHandRotations(
   hr: number,

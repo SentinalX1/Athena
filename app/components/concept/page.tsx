@@ -4,6 +4,8 @@ import React, { useEffect, useState, useRef, Suspense } from 'react';
 import { Canvas, useFrame, ThreeElements } from '@react-three/fiber';
 import { useGLTF, Environment } from '@react-three/drei';
 import * as THREE from 'three';
+import Lenis from 'lenis';
+import 'lenis/dist/lenis.css';
 
 const _qDelta = new THREE.Quaternion();
 const _axis = new THREE.Vector3(0, 0, 1);
@@ -147,12 +149,34 @@ export default function ConceptScrollPage() {
     onResize();
     window.addEventListener('resize', onResize);
 
-    const onScroll = () => setScrollY(window.scrollY);
-    window.addEventListener('scroll', onScroll, { passive: true });
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      orientation: 'vertical',
+      gestureOrientation: 'vertical',
+      smoothWheel: true,
+      wheelMultiplier: 1,
+      touchMultiplier: 2,
+    });
+
+    lenis.on('scroll', (e: { scroll: number }) => {
+      setScrollY(e.scroll);
+    });
+
+    // Initial sync
+    setScrollY(window.scrollY);
+
+    let rafId: number;
+    function raf(time: number) {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    }
+    rafId = requestAnimationFrame(raf);
 
     return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
       window.removeEventListener('resize', onResize);
-      window.removeEventListener('scroll', onScroll);
     };
   }, []);
 

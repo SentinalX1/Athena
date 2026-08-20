@@ -28,15 +28,24 @@ interface WatchHands {
   secondHand?: THREE.Object3D;
 }
 
-function syncClockHands(date: Date, hands: WatchHands, initQuats: HandQuaternions) {
-  const sec = date.getSeconds() + date.getMilliseconds() / 1000;
-  const min = date.getMinutes() + sec / 60;
-  const hr = (date.getHours() % 12) + date.getMinutes() / 60;
+const BAKED_HOUR = 10 + 10 / 60;
+const BAKED_MINUTE = 10 + 40 / 60;
+const BAKED_SECOND = 40;
 
-  const BAKED_HOUR = 10 + 10 / 60;
-  const BAKED_MINUTE = 10 + 40 / 60;
-  const BAKED_SECOND = 40;
+const START_HOUR = 10 + 10 / 60; // 10:10 pose (Hour hand at 10)
+const START_MINUTE = 10;         // 10 minutes mark (Minute hand at 2 o'clock)
+const START_SECOND = 30;         // 30 seconds mark (Second hand at 6 o'clock)
 
+const HOLD_DURATION = 0.55; // Hold the 10:10:30 catalog pose for 0.55s
+const SWEEP_DURATION = 1.35; // Smoothly rotate to user's local time over 1.35s
+
+function applyHandRotations(
+  hr: number,
+  min: number,
+  sec: number,
+  hands: WatchHands,
+  initQuats: HandQuaternions
+) {
   if (hands.hourHand) {
     _qDelta.setFromAxisAngle(_axis, -(((hr - BAKED_HOUR) / 12) * Math.PI * 2));
     hands.hourHand.quaternion.multiplyQuaternions(initQuats.hour, _qDelta);
@@ -49,6 +58,43 @@ function syncClockHands(date: Date, hands: WatchHands, initQuats: HandQuaternion
     _qDelta.setFromAxisAngle(_axis, -(((sec - BAKED_SECOND) / 60) * Math.PI * 2));
     hands.secondHand.quaternion.multiplyQuaternions(initQuats.second, _qDelta);
   }
+}
+
+function updateWatchHandsAnimation(
+  elapsedTime: number,
+  hands: WatchHands,
+  initQuats: HandQuaternions
+) {
+  const now = new Date();
+  const targetSec = now.getSeconds() + now.getMilliseconds() / 1000;
+  const targetMin = now.getMinutes() + targetSec / 60;
+  const targetHr = (now.getHours() % 12) + targetMin / 60;
+
+  if (elapsedTime <= HOLD_DURATION) {
+    // Initial catalog pose: 10:10:30
+    applyHandRotations(START_HOUR, START_MINUTE, START_SECOND, hands, initQuats);
+    return;
+  }
+
+  const sweepElapsed = elapsedTime - HOLD_DURATION;
+  const progress = Math.min(1, sweepElapsed / SWEEP_DURATION);
+  // Smooth mechanical easing
+  const eased = 1 - Math.pow(1 - progress, 3);
+
+  // Clockwise rotation to target time
+  let diffHr = (targetHr - START_HOUR) % 12;
+  if (diffHr < 0) diffHr += 12;
+
+  let diffMin = (targetMin - START_MINUTE) % 60;
+  if (diffMin < 0) diffMin += 60;
+
+  const currentHr = START_HOUR + diffHr * eased;
+  const currentMin = START_MINUTE + diffMin * eased;
+
+  // Second hand starts at 30s and sweeps forward
+  const currentSec = START_SECOND + sweepElapsed;
+
+  applyHandRotations(currentHr, currentMin, currentSec, hands, initQuats);
 }
 
 type WatchProps = ThreeElements['group'] & { scrollRaw: number };
@@ -78,25 +124,26 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
       minute: minuteHand.quaternion.clone(),
       second: secondHand.quaternion.clone(),
     };
-    // Immediate time revalidation on initial load/mount
-    syncClockHands(new Date(), { hourHand, minuteHand, secondHand }, initQ.current);
+    // Initialize immediately in the 10:10:30 catalog pose
+    applyHandRotations(START_HOUR, START_MINUTE, START_SECOND, { hourHand, minuteHand, secondHand }, initQ.current);
   }
 
   useEffect(() => {
     setMounted(true);
     if (initQ.current && hourHand && minuteHand && secondHand) {
-      syncClockHands(new Date(), { hourHand, minuteHand, secondHand }, initQ.current);
+      applyHandRotations(START_HOUR, START_MINUTE, START_SECOND, { hourHand, minuteHand, secondHand }, initQ.current);
     }
   }, [hourHand, minuteHand, secondHand]);
 
   const smoothRaw = useRef(0);
   const floatTime = useRef(0);
+  const animTime = useRef(0);
 
   useFrame((_, delta) => {
     if (!mounted || !initQ.current || !groupRef.current) return;
 
-    // Continuous clock synchronization
-    syncClockHands(new Date(), { hourHand, minuteHand, secondHand }, initQ.current);
+    animTime.current += delta;
+    updateWatchHandsAnimation(animTime.current, { hourHand, minuteHand, secondHand }, initQ.current);
 
     // Smooth scroll interpolation
     smoothRaw.current = THREE.MathUtils.lerp(smoothRaw.current, scrollRaw, 1 - Math.pow(0.0005, delta));

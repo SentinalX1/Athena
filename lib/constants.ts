@@ -1,11 +1,9 @@
 // 91-Frame Kinetic Loader Configuration
 export const TOTAL_FRAMES = 91; // frame_00 to frame_90
 export const FRAME_DURATION = 30; // 30ms per frame
-
-export const FRAME_PATHS = Array.from({ length: TOTAL_FRAMES }, (_, i) => {
-  const padded = String(i).padStart(2, '0');
-  return `/Loader/frame_${padded}_delay-0.03s.png`;
-});
+export const SPRITESHEET_PATH = '/Loader/spritesheet.png';
+export const SPRITESHEET_COLS = 10;
+export const SPRITESHEET_FRAME_SIZE = 150;
 
 // Watch Hand Calibration Constants
 export const BAKED_HOUR = 10 + 10 / 60;

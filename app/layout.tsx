@@ -13,6 +13,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
+      <head>
+        <link rel="preload" as="image" href="/Loader/spritesheet.png" />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

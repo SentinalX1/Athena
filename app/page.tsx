@@ -16,6 +16,198 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
+// 91-Frame Kinetic Loader Resources
+const TOTAL_FRAMES = 91; // frame_00 to frame_90
+const FRAME_DURATION = 30; // 30ms per frame
+
+const FRAME_PATHS = Array.from({ length: TOTAL_FRAMES }, (_, i) => {
+  const padded = String(i).padStart(2, '0');
+  return `/Loader/frame_${padded}_delay-0.03s.png`;
+});
+
+// Kinetic Frame Player (Alpha Transparency + Tight Crop)
+function KineticFramePlayer({ size = 150 }: { size?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imagesRef = useRef<HTMLImageElement[]>([]);
+
+  useEffect(() => {
+    const loadedImages: HTMLImageElement[] = [];
+    FRAME_PATHS.forEach((path, index) => {
+      const img = new Image();
+      img.src = path;
+      loadedImages[index] = img;
+    });
+    imagesRef.current = loadedImages;
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    let animId: number;
+    let lastTime = performance.now();
+    let currentFrame = 0;
+
+    const render = (now: number) => {
+      const delta = now - lastTime;
+
+      if (delta >= FRAME_DURATION) {
+        const framesToAdvance = Math.floor(delta / FRAME_DURATION);
+        currentFrame = (currentFrame + framesToAdvance) % TOTAL_FRAMES;
+        lastTime = now - (delta % FRAME_DURATION);
+
+        const img = imagesRef.current[currentFrame];
+        if (img && img.complete && img.naturalWidth > 0) {
+          const cw = canvas.width;
+          const ch = canvas.height;
+          ctx.clearRect(0, 0, cw, ch);
+
+          const cropSize = Math.min(img.naturalWidth, img.naturalHeight) * 0.48;
+          const sx = (img.naturalWidth - cropSize) / 2;
+          const sy = (img.naturalHeight - cropSize) / 2;
+
+          ctx.drawImage(img, sx, sy, cropSize, cropSize, 0, 0, cw, ch);
+
+          const imgData = ctx.getImageData(0, 0, cw, ch);
+          const data = imgData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            const luminance = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+            if (luminance < 25) {
+              data[i + 3] = 0;
+            } else {
+              data[i + 3] = Math.min(255, (luminance / 220) * 255);
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+        }
+      }
+
+      animId = requestAnimationFrame(render);
+    };
+
+    animId = requestAnimationFrame(render);
+
+    return () => {
+      cancelAnimationFrame(animId);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={300}
+      height={300}
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+      }}
+      className="pointer-events-none block"
+    />
+  );
+}
+
+// Fullscreen Iris Aperture Loading Screen
+function AthenaLoadingScreen({
+  isWatchLoaded,
+  onComplete,
+}: {
+  isWatchLoaded: boolean;
+  onComplete: () => void;
+}) {
+  const [isExiting, setIsExiting] = useState(false);
+  const [hasUnmounted, setHasUnmounted] = useState(false);
+  const startTime = useRef(performance.now());
+
+  useEffect(() => {
+    if (!isWatchLoaded) return;
+
+    // Ensure the kinetic loader plays gracefully for at least 1.8s
+    const elapsed = performance.now() - startTime.current;
+    const remainingDelay = Math.max(0, 1800 - elapsed);
+
+    const exitTimer = setTimeout(() => {
+      setIsExiting(true);
+
+      // Once the iris aperture finishes closing (1.15s), notify parent
+      const finishTimer = setTimeout(() => {
+        setHasUnmounted(true);
+        onComplete();
+      }, 1150);
+
+      return () => clearTimeout(finishTimer);
+    }, remainingDelay);
+
+    return () => clearTimeout(exitTimer);
+  }, [isWatchLoaded, onComplete]);
+
+  if (hasUnmounted) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] pointer-events-none overflow-hidden select-none"
+      style={{
+        clipPath: isExiting ? 'circle(0% at 50% 50%)' : 'circle(150% at 50% 50%)',
+        transition: 'clip-path 1.15s cubic-bezier(0.77, 0, 0.175, 1)',
+      }}
+    >
+      {/* Caustic Sapphire Background */}
+      <div className="absolute inset-0 bg-[#040407]">
+        {/* Soft breathing caustic light pools */}
+        <div
+          className="absolute inset-0 opacity-45 animate-pulse"
+          style={{
+            animationDuration: '7s',
+            background: `
+              radial-gradient(ellipse 65% 45% at 24% 22%, rgba(185, 205, 235, 0.17) 0%, rgba(95, 115, 145, 0.05) 42%, transparent 68%),
+              radial-gradient(ellipse 55% 55% at 78% 70%, rgba(140, 160, 200, 0.12) 0%, transparent 58%),
+              radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.04) 0%, transparent 75%)
+            `,
+          }}
+        />
+
+        {/* Prismatic Shimmer Sheen */}
+        <div
+          className="absolute inset-0 opacity-30"
+          style={{
+            background: 'conic-gradient(from 180deg at 50% 50%, #040407 0deg, rgba(70,85,110,0.14) 90deg, #040407 180deg, rgba(110,95,75,0.09) 270deg, #040407 360deg)',
+            filter: 'blur(50px)',
+          }}
+        />
+
+        {/* High-Fidelity 35mm Film Grain Overlay */}
+        <div
+          className="absolute inset-0 opacity-35"
+          style={{
+            mixBlendMode: 'overlay',
+            filter: 'contrast(160%) brightness(105%)',
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          }}
+        />
+
+        {/* Deep Edge Vignette */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'radial-gradient(circle at 50% 50%, transparent 32%, rgba(2, 2, 4, 0.88) 100%)',
+          }}
+        />
+      </div>
+
+      {/* Center 27-Dot Kinetic Cluster */}
+      <div
+        className={`absolute inset-0 flex items-center justify-center transition-all duration-700 ease-[cubic-bezier(0.7,0,0.3,1)] ${
+          isExiting ? 'scale-75 opacity-0' : 'scale-100 opacity-100'
+        }`}
+      >
+        <KineticFramePlayer size={150} />
+      </div>
+    </div>
+  );
+}
+
+// Clock Hand Synchronization Engine
 interface HandQuaternions {
   hour: THREE.Quaternion;
   minute: THREE.Quaternion;
@@ -36,8 +228,8 @@ const START_HOUR = 10 + 10 / 60; // 10:10 pose (Hour hand at 10)
 const START_MINUTE = 10;         // 10 minutes mark (Minute hand at 2 o'clock)
 const START_SECOND = 30;         // 30 seconds mark (Second hand at 6 o'clock)
 
-const HOLD_DURATION = 0.75; // Hold the 10:10:30 catalog pose
-const SWEEP_DURATION = 2.05; // Smoothly rotate to user's local time
+const HOLD_DURATION = 0.25;  // Hold the 10:10:30 catalog pose for 0.25s after reveal
+const SWEEP_DURATION = 2.20; // Smoothly rotate to user's local time over 2.2s
 
 function applyHandRotations(
   hr: number,
@@ -71,17 +263,16 @@ function updateWatchHandsAnimation(
   const targetHr = (now.getHours() % 12) + targetMin / 60;
 
   if (elapsedTime <= HOLD_DURATION) {
-    // Initial catalog pose: 10:10:30
+    // Hold 10:10:30 display pose
     applyHandRotations(START_HOUR, START_MINUTE, START_SECOND, hands, initQuats);
     return;
   }
 
   const sweepElapsed = elapsedTime - HOLD_DURATION;
   const progress = Math.min(1, sweepElapsed / SWEEP_DURATION);
-  // Smooth mechanical easing
-  const eased = 1 - Math.pow(1 - progress, 3);
+  const eased = 1 - Math.pow(1 - progress, 3); // Smooth mechanical cubic deceleration
 
-  // Clockwise rotation to target time
+  // Clockwise sweep to target time
   let diffHr = (targetHr - START_HOUR) % 12;
   if (diffHr < 0) diffHr += 12;
 
@@ -90,17 +281,19 @@ function updateWatchHandsAnimation(
 
   const currentHr = START_HOUR + diffHr * eased;
   const currentMin = START_MINUTE + diffMin * eased;
-
-  // Second hand starts at 30s and sweeps forward
   const currentSec = START_SECOND + sweepElapsed;
 
   applyHandRotations(currentHr, currentMin, currentSec, hands, initQuats);
 }
 
-type WatchProps = ThreeElements['group'] & { scrollRaw: number };
-
 // 3D Watch Component
-function WatchModel({ scrollRaw, ...props }: WatchProps) {
+type WatchProps = ThreeElements['group'] & {
+  scrollRaw: number;
+  isLoaderComplete: boolean;
+  onModelReady?: () => void;
+};
+
+function WatchModel({ scrollRaw, isLoaderComplete, onModelReady, ...props }: WatchProps) {
   const [mounted, setMounted] = useState(false);
 
   const { scene } = useGLTF('/models/AthenaWatch.glb');
@@ -132,8 +325,9 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
     setMounted(true);
     if (initQ.current && hourHand && minuteHand && secondHand) {
       applyHandRotations(START_HOUR, START_MINUTE, START_SECOND, { hourHand, minuteHand, secondHand }, initQ.current);
+      onModelReady?.();
     }
-  }, [hourHand, minuteHand, secondHand]);
+  }, [hourHand, minuteHand, secondHand, onModelReady]);
 
   const smoothRaw = useRef(0);
   const floatTime = useRef(0);
@@ -142,8 +336,14 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
   useFrame((_, delta) => {
     if (!mounted || !initQ.current || !groupRef.current) return;
 
-    animTime.current += delta;
-    updateWatchHandsAnimation(animTime.current, { hourHand, minuteHand, secondHand }, initQ.current);
+    // Only start the time calibration animation once the loader has completely opened
+    if (isLoaderComplete) {
+      animTime.current += delta;
+      updateWatchHandsAnimation(animTime.current, { hourHand, minuteHand, secondHand }, initQ.current);
+    } else {
+      // Hold static 10:10:30 while loading screen is active
+      applyHandRotations(START_HOUR, START_MINUTE, START_SECOND, { hourHand, minuteHand, secondHand }, initQ.current);
+    }
 
     // Smooth scroll interpolation
     smoothRaw.current = THREE.MathUtils.lerp(smoothRaw.current, scrollRaw, 1 - Math.pow(0.0005, delta));
@@ -165,7 +365,6 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
     const idleFloat = Math.sin(t * 0.8) * 0.015 * (1 - pSec2);
 
     // X Position Target Mapping
-    // Hero: 0.0 | Sec 2: -0.65 (Left) | Sec 3: +0.62 (Right) | Sec 4: 0.0 (Centered/Retracted)
     let posX = 0;
     if (sp < 1.0) {
       posX = THREE.MathUtils.lerp(0.0, -0.65, pSec2);
@@ -178,11 +377,10 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
     // Y Position
     let posY = -0.05 + idleFloat;
     if (sp >= 2.0) {
-      posY = THREE.MathUtils.lerp(-0.05, -0.35, pSec4); // Settles in lower portion of Section 4
+      posY = THREE.MathUtils.lerp(-0.05, -0.35, pSec4);
     }
 
     // Rotation Mapping
-    // Hero: Front facing | Sec 2: 3/4 Yaw Left | Sec 3: 3/4 Yaw Right
     const rotX = THREE.MathUtils.lerp(-0.30, -0.20, pSec2);
     let rotY = THREE.MathUtils.lerp(0.0, -0.55, pSec2);
     if (sp >= 1.0) {
@@ -213,10 +411,13 @@ function WatchModel({ scrollRaw, ...props }: WatchProps) {
   );
 }
 
-// Main Page Component
+// Main Home Page Component
 export default function HomePage() {
   const [scrollY, setScrollY] = useState(0);
   const [winH, setWinH] = useState(1);
+  const [isWatchLoaded, setIsWatchLoaded] = useState(false);
+  const [isLoaderComplete, setIsLoaderComplete] = useState(false);
+  const lenisRef = useRef<Lenis | null>(null);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -238,11 +439,12 @@ export default function HomePage() {
       touchMultiplier: 2,
     });
 
+    lenisRef.current = lenis;
+
     lenis.on('scroll', (e: { scroll: number }) => {
       setScrollY(e.scroll);
     });
 
-    // Initial sync
     setScrollY(window.scrollY);
 
     let rafId: number;
@@ -259,6 +461,15 @@ export default function HomePage() {
     };
   }, []);
 
+  // Lock scrolling during loading sequence
+  useEffect(() => {
+    if (!isLoaderComplete && lenisRef.current) {
+      lenisRef.current.stop();
+    } else if (isLoaderComplete && lenisRef.current) {
+      lenisRef.current.start();
+    }
+  }, [isLoaderComplete]);
+
   const scrollRaw = scrollY / (winH || 1);
 
   // Synchronized HTML Opacities & Thresholds
@@ -270,6 +481,12 @@ export default function HomePage() {
   return (
     <div className="relative w-full" style={{ fontFamily: 'Georgia, serif' }}>
 
+      {/* Official Iris Aperture Loading Screen */}
+      <AthenaLoadingScreen
+        isWatchLoaded={isWatchLoaded}
+        onComplete={() => setIsLoaderComplete(true)}
+      />
+
       {/* Fixed 3D Canvas */}
       <div className="fixed inset-0 z-40 pointer-events-none">
         <Canvas camera={{ position: [0, 0, 2.5], fov: 40 }} style={{ position: 'absolute', inset: 0 }}>
@@ -279,14 +496,20 @@ export default function HomePage() {
           <pointLight position={[0, 1, 2.5]} intensity={0.8} color="#FFF8F0" />
           <Environment preset="city" />
           <Suspense fallback={null}>
-            <WatchModel scrollRaw={scrollRaw} />
+            <WatchModel
+              scrollRaw={scrollRaw}
+              isLoaderComplete={isLoaderComplete}
+              onModelReady={() => setIsWatchLoaded(true)}
+            />
           </Suspense>
         </Canvas>
       </div>
 
       {/* Fixed Navbar */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 py-7 mix-blend-difference text-white"
+        className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-8 py-7 mix-blend-difference text-white transition-opacity duration-700 ${
+          isLoaderComplete ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
         style={{ maxWidth: '1400px', margin: '0 auto' }}
       >
         <span style={{ fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.28em' }}>ATHENA</span>
@@ -297,11 +520,12 @@ export default function HomePage() {
         <button style={{
           fontSize: '0.62rem', letterSpacing: '0.2em', textTransform: 'uppercase',
           border: '1px solid rgba(255,255,255,0.4)', borderRadius: '9999px',
-          padding: '0.5rem 1.35rem', background: 'transparent', cursor: 'pointer', color: 'white'
+          padding: '0.65rem 1.45rem', paddingTop: '0.75rem', paddingBottom: '0.60rem',
+          background: 'transparent', cursor: 'pointer', color: 'white'
         }}>Contact</button>
       </header>
 
-      {/* SECTION 1 — HERO */}
+      {/* SECTION 1: HERO */}
       <section
         id="hero"
         className="relative z-10 flex flex-col items-center justify-between select-none"
@@ -347,7 +571,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SECTION 2 — THE TIMEPIECE (Watch docked LEFT, Copy on RIGHT) */}
+      {/* SECTION 2: THE TIMEPIECE (Watch docked LEFT, Copy on RIGHT) */}
       <section
         id="timepiece"
         className="relative z-10 flex items-center select-none"
@@ -417,7 +641,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SECTION 3 — CRAFTSMANSHIP (Watch docked RIGHT, Copy on LEFT) */}
+      {/* SECTION 3: CRAFTSMANSHIP (Watch docked RIGHT, Copy on LEFT) */}
       <section
         id="craftsmanship"
         className="relative z-10 flex items-center select-none"
@@ -472,7 +696,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SECTION 4 — COMING SOON (Centered Form, Watch Retracted/Hidden) */}
+      {/* SECTION 4: COMING SOON */}
       <section
         id="coming-soon"
         className="relative z-10 flex items-center justify-center select-none"

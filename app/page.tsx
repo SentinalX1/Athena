@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef, Suspense } from 'react';
+import React, { useEffect, useState, useRef, Suspense, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
 import Lenis from 'lenis';
@@ -23,6 +23,7 @@ export default function HomePage() {
   const [isWatchLoaded, setIsWatchLoaded] = useState(false);
   const [isLoaderComplete, setIsLoaderComplete] = useState(false);
   const [isSessionCached, setIsSessionCached] = useState(false);
+  const [navTarget, setNavTarget] = useState<{ targetScroll: number; timestamp: number } | null>(null);
   const lenisRef = useRef<Lenis | null>(null);
 
   // Check if the user has already visited in this session — skip loader on reload
@@ -93,6 +94,27 @@ export default function HomePage() {
     }
   }, [isLoaderComplete]);
 
+  // Smooth Lenis navigation handler for Navbar and CTA buttons with direct trajectory coordination
+  const handleNavigate = useCallback((target: string) => {
+    let targetScrollRaw = 0;
+    if (target === '#timepiece') targetScrollRaw = 1.0;
+    else if (target === '#craftsmanship') targetScrollRaw = 2.0;
+    else if (target === '#coming-soon') targetScrollRaw = 3.0;
+    else if (target === '#hero') targetScrollRaw = 0.0;
+
+    setNavTarget({ targetScroll: targetScrollRaw, timestamp: performance.now() });
+
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(target, {
+        duration: 1.6,
+        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      });
+    } else {
+      const el = document.querySelector(target);
+      el?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, []);
+
   // Render mobile/tablet fallback if screen is under 1024px
   if (isMobile === true) {
     return <MobileFallbackScreen />;
@@ -134,16 +156,17 @@ export default function HomePage() {
               scrollRaw={scrollRaw}
               isLoaderComplete={isLoaderComplete}
               onModelReady={() => setIsWatchLoaded(true)}
+              navTarget={navTarget}
             />
           </Suspense>
         </Canvas>
       </div>
 
       {/* Fixed Luxury Navigation */}
-      <Navbar isVisible={isLoaderComplete} />
+      <Navbar isVisible={isLoaderComplete} onNavigate={handleNavigate} />
 
       {/* Section 1: Hero */}
-      <HeroSection heroP={heroP} />
+      <HeroSection heroP={heroP} onNavigate={handleNavigate} />
 
       {/* Section 2: The Timepiece */}
       <TimepieceSection timepieceP={timepieceP} />

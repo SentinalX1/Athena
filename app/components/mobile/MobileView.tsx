@@ -13,7 +13,7 @@ import {
 import { smoothstep } from '@/lib/math';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile 3D Watch Model & Scene Controller
+// Mobile 3D Watch Model & Scene Controller with Studio Horology Lighting
 // ─────────────────────────────────────────────────────────────────────────────
 interface MobileWatchSceneProps {
   scrollProgress: number;
@@ -85,7 +85,7 @@ function MobileWatchScene({
   useFrame((_, delta) => {
     if (!initQ.current || !groupRef.current) return;
 
-    // Time animation
+    // Real-time time animation
     if (isLoaderComplete) {
       animTime.current += delta;
       updateWatchHandsAnimation(
@@ -108,14 +108,14 @@ function MobileWatchScene({
 
     // 360° Tactile Inspection Mode
     if (isInspecting) {
-      smoothInspectX.current = THREE.MathUtils.lerp(smoothInspectX.current, inspectRot.x, 0.14);
-      smoothInspectY.current = THREE.MathUtils.lerp(smoothInspectY.current, inspectRot.y, 0.14);
+      smoothInspectX.current = THREE.MathUtils.lerp(smoothInspectX.current, inspectRot.x, 0.12);
+      smoothInspectY.current = THREE.MathUtils.lerp(smoothInspectY.current, inspectRot.y, 0.12);
 
       groupRef.current.position.set(0, 0.05, 0.1);
-      groupRef.current.rotation.x = -0.22 + smoothInspectX.current;
+      groupRef.current.rotation.x = -0.20 + smoothInspectX.current;
       groupRef.current.rotation.y = smoothInspectY.current + Math.sin(t * 0.4) * 0.015;
       groupRef.current.rotation.z = 0;
-      groupRef.current.scale.set(1.95, 1.95, 1.95);
+      groupRef.current.scale.set(2.1, 2.1, 2.1);
       return;
     }
 
@@ -127,44 +127,58 @@ function MobileWatchScene({
     );
     const sp = smoothProgress.current;
 
-    // Mobile Vertical Scroll Choreography
-    const pSec2 = smoothstep(0.3, 1.0, sp);
-    const pSec3 = smoothstep(1.2, 2.0, sp);
-    const pSec4 = smoothstep(2.2, 3.0, sp);
+    // Mobile Vertical Scroll Choreography:
+    // 0.0 - 0.9 : Hero (Majestic Center Stage, high scale)
+    // 0.9 - 1.8 : Specs Section (Upper stage showcase, angled dial)
+    // 1.8 - 2.7 : Craftsmanship (Side crown & profile bevel showcase)
+    // 2.7 - 3.5 : VIP Section (Lower stage macro silhouette)
 
-    const idleFloat = Math.sin(t * 0.85) * 0.018 * (1 - pSec2);
+    const pSec2 = smoothstep(0.4, 1.1, sp);
+    const pSec3 = smoothstep(1.3, 2.1, sp);
+    const pSec4 = smoothstep(2.3, 3.0, sp);
 
-    // Y Position (elevates up to leave space for mobile content cards)
-    let posY = 0.08 + idleFloat;
-    if (sp >= 0.3 && sp < 1.5) {
-      posY = THREE.MathUtils.lerp(0.08, 0.44, pSec2);
+    const idleFloat = Math.sin(t * 0.8) * 0.015 * (1 - pSec2);
+
+    // Y Position:
+    // Starts at 0.12 (Hero center-upper), elevates smoothly to 0.42 (Specs), stays at 0.38 (Craft), lowers to -0.15 (VIP)
+    let posY = 0.12 + idleFloat;
+    if (sp >= 0.4 && sp < 1.5) {
+      posY = THREE.MathUtils.lerp(0.12, 0.45, pSec2);
     } else if (sp >= 1.5 && sp < 2.5) {
-      posY = THREE.MathUtils.lerp(0.44, 0.40, pSec3);
+      posY = THREE.MathUtils.lerp(0.45, 0.38, pSec3);
     } else if (sp >= 2.5) {
-      posY = THREE.MathUtils.lerp(0.40, -0.12, pSec4);
+      posY = THREE.MathUtils.lerp(0.38, -0.16, pSec4);
     }
 
-    // Rotation Mapping
-    const rotX = THREE.MathUtils.lerp(-0.25, -0.12, pSec2);
-    let rotY = THREE.MathUtils.lerp(0.0, -0.38, pSec2);
+    // X Position: Subtle balance shifts
+    let posX = 0;
+    if (sp >= 1.5 && sp < 2.5) {
+      posX = THREE.MathUtils.lerp(0.0, 0.08, pSec3);
+    } else if (sp >= 2.5) {
+      posX = THREE.MathUtils.lerp(0.08, 0.0, pSec4);
+    }
+
+    // Rotation: Keeps dial visible and well-lit across all sections
+    const rotX = THREE.MathUtils.lerp(-0.28, -0.16, pSec2);
+    let rotY = THREE.MathUtils.lerp(0.0, -0.32, pSec2);
     if (sp >= 1.5) {
-      rotY = THREE.MathUtils.lerp(-0.38, 0.72, pSec3);
+      rotY = THREE.MathUtils.lerp(-0.32, 0.45, pSec3);
     }
     if (sp >= 2.5) {
-      rotY = THREE.MathUtils.lerp(0.72, 0.0, pSec4);
+      rotY = THREE.MathUtils.lerp(0.45, 0.0, pSec4);
     }
 
-    // Scale Mapping
-    let scale = THREE.MathUtils.lerp(2.0, 1.48, pSec2);
+    // Scale: Generous scale on mobile portrait displays
+    let scale = THREE.MathUtils.lerp(2.2, 1.58, pSec2);
     if (sp >= 2.5) {
-      scale = THREE.MathUtils.lerp(1.48, 1.20, pSec4);
+      scale = THREE.MathUtils.lerp(1.58, 1.25, pSec4);
     }
 
-    groupRef.current.position.set(0, posY, THREE.MathUtils.lerp(0.0, 0.15, pSec2));
+    groupRef.current.position.set(posX, posY, THREE.MathUtils.lerp(0.0, 0.12, pSec2));
     groupRef.current.rotation.set(
       rotX,
       rotY + Math.sin(t * 0.4) * 0.015,
-      THREE.MathUtils.lerp(0.0, -0.04, pSec2)
+      THREE.MathUtils.lerp(0.0, -0.03, pSec2)
     );
     groupRef.current.scale.set(scale, scale, scale);
   });
@@ -177,7 +191,7 @@ function MobileWatchScene({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile Hybrid View Component
+// Mobile View Component — Masterpiece Luxury Horology
 // ─────────────────────────────────────────────────────────────────────────────
 interface MobileViewProps {
   isLoaderComplete: boolean;
@@ -189,7 +203,6 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectRot, setInspectRot] = useState({ x: 0, y: 0 });
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeSpec, setActiveSpec] = useState<number>(0);
   const [emailValue, setEmailValue] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
 
@@ -202,8 +215,10 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     if (isInspecting) return;
     const el = containerRef.current;
     if (!el) return;
-    const progress = el.scrollTop / (el.scrollHeight - el.clientHeight || 1);
-    setScrollProgress(progress * 3.0);
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) return;
+    const progress = (el.scrollTop / maxScroll) * 3.0;
+    setScrollProgress(progress);
   };
 
   const scrollToSection = (targetId: string) => {
@@ -252,52 +267,27 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     setEmailSubmitted(true);
   };
 
-  const specsList = [
-    {
-      label: 'CASE',
-      title: 'Grade 5 Forged Titanium',
-      value: '42 MM',
-      detail: 'Machined from a single billet with 14 hours of multi-axis hand satin finishing. 9.4mm profile.',
-    },
-    {
-      label: 'CRYSTAL',
-      title: 'Double-Domed Sapphire',
-      value: '9H HARDNESS',
-      detail: 'Dual-sided anti-reflective vacuum vapor deposition for absolute optical clarity from any angle.',
-    },
-    {
-      label: 'CALIBRE',
-      title: 'In-House Calibre A01',
-      value: '72H RESERVE',
-      detail: 'Self-winding mechanical engine with skeletonized tungsten rotor, beating at 28,800 vibrations per hour.',
-    },
-    {
-      label: 'PRECISION',
-      title: 'COSC Certified Rate',
-      value: '±2 SEC / DAY',
-      detail: 'Individually regulated across 5 positions and 3 temperatures in Geneva atelier.',
-    },
-  ];
-
   return (
     <div
-      className="relative w-full h-[100dvh] bg-[#040407] text-white overflow-hidden select-none font-serif"
+      className="relative w-full h-[100dvh] bg-[#050507] text-white overflow-hidden select-none font-serif"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* Fixed 3D WebGL Canvas Layer */}
+      {/* ── Fixed 3D WebGL Canvas Layer with Studio Multi-Light Rig ── */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         <Canvas
           dpr={[1, 1.5]}
-          camera={{ position: [0, 0, 2.5], fov: 48 }}
+          camera={{ position: [0, 0, 2.5], fov: 46 }}
           style={{ position: 'absolute', inset: 0 }}
         >
-          <ambientLight intensity={0.9} />
-          <directionalLight position={[3, 6, 4]} intensity={1.8} color="#FFFFFF" />
-          <directionalLight position={[-3, -2, -2]} intensity={0.5} color="#B4C8FF" />
-          <pointLight position={[0, 1, 2.2]} intensity={1.0} color="#FFF8F0" />
+          {/* Studio Horology Lighting: High ambient + balanced key/fill/rim so titanium & sapphire gleam */}
+          <ambientLight intensity={1.1} />
+          <directionalLight position={[3, 5, 4]} intensity={2.2} color="#FFFFFF" />
+          <directionalLight position={[-3, -1, 3]} intensity={1.2} color="#D0E0FF" />
+          <directionalLight position={[0, 6, -2]} intensity={1.5} color="#FFF5EA" />
+          <pointLight position={[0, 0.2, 2.5]} intensity={1.4} color="#FFFFFF" />
           <Environment preset="city" />
           <Suspense fallback={null}>
             <MobileWatchScene
@@ -311,89 +301,85 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         </Canvas>
       </div>
 
-      {/* Caustic Atmosphere Background */}
+      {/* ── Ambient Velvet Gradients (No grain / noise artifacts) ── */}
       <div className="absolute inset-0 pointer-events-none z-[1]">
         <div
-          className="absolute inset-0 opacity-40 animate-pulse"
+          className="absolute inset-0"
           style={{
-            animationDuration: '8s',
             background: `
-              radial-gradient(ellipse 70% 50% at 30% 20%, rgba(185, 205, 235, 0.16) 0%, transparent 65%),
-              radial-gradient(ellipse 60% 60% at 75% 75%, rgba(140, 160, 200, 0.12) 0%, transparent 70%)
+              radial-gradient(ellipse 80% 50% at 50% 25%, rgba(195, 215, 245, 0.12) 0%, transparent 60%),
+              radial-gradient(ellipse 70% 60% at 50% 85%, rgba(130, 155, 195, 0.08) 0%, transparent 70%)
             `,
-          }}
-        />
-        <div
-          className="absolute inset-0 opacity-30"
-          style={{
-            mixBlendMode: 'overlay',
-            filter: 'contrast(160%) brightness(105%)',
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
           }}
         />
       </div>
 
-      {/* Sleek Floating Header */}
-      <header className="absolute top-0 left-0 right-0 z-40 px-5 pt-4 pb-3 flex items-center justify-between pointer-events-auto backdrop-blur-md bg-black/20 border-b border-white/[0.06]">
+      {/* ── Fixed Mobile Luxury Header ── */}
+      <header className="absolute top-0 left-0 right-0 z-40 px-6 pt-5 pb-4 flex items-center justify-between pointer-events-auto backdrop-blur-lg bg-[#050507]/40 border-b border-white/[0.07]">
         <a
           href="#hero"
           onClick={(e) => {
             e.preventDefault();
             scrollToSection('#hero');
           }}
-          className="text-sm font-bold tracking-[0.3em] text-white cursor-pointer select-none"
+          className="text-base font-bold tracking-[0.32em] text-white cursor-pointer select-none"
         >
           ATHENA
         </a>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <button
             onClick={startInspect}
-            className="flex items-center gap-1.5 bg-white/[0.07] border border-white/15 px-2.5 py-1 rounded-full text-[9px] font-mono tracking-widest text-blue-200 cursor-pointer active:scale-95 transition-all"
+            className="flex items-center gap-1.5 bg-white/[0.08] hover:bg-white/15 border border-white/20 px-3 py-1.5 rounded-full text-[10px] font-mono tracking-widest text-white/90 cursor-pointer active:scale-95 transition-all shadow-sm"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-            360°
+            360° VIEW
           </button>
 
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="p-1.5 rounded-full bg-white/[0.05] border border-white/10 text-white cursor-pointer active:scale-95 transition-all"
+            className="p-2 rounded-full bg-white/[0.06] border border-white/15 text-white cursor-pointer active:scale-95 transition-all"
             aria-label="Toggle navigation menu"
           >
-            <svg className="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {menuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M6 18L18 6M6 6l12 12" />
               ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M4 7h16M4 12h16M4 17h16" />
               )}
             </svg>
           </button>
         </div>
       </header>
 
-      {/* Slide-Down Luxury Mobile Menu */}
+      {/* ── Slide-Down Luxury Navigation Drawer ── */}
       {menuOpen && (
-        <div className="absolute top-[54px] left-0 right-0 z-50 bg-[#06060c]/95 border-b border-white/10 backdrop-blur-2xl px-6 py-6 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top duration-300">
-          <p className="font-mono text-[9px] tracking-[0.35em] uppercase text-white/30 mb-1">NAVIGATION</p>
+        <div className="absolute top-[65px] left-0 right-0 z-50 bg-[#07070b]/98 border-b border-white/15 backdrop-blur-2xl px-6 py-6 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top duration-300">
+          <p className="font-mono text-[9px] tracking-[0.35em] uppercase text-white/40 mb-1">
+            ATHENA HOROLOGY
+          </p>
           {[
-            { id: '#hero', label: '01. The Overview' },
-            { id: '#timepiece', label: '02. Specifications & Dimensions' },
-            { id: '#craftsmanship', label: '03. Haute Horlogerie Craft' },
-            { id: '#coming-soon', label: '04. VIP Premiere Reservation' },
-          ].map((item) => (
+            { id: '#hero', label: 'Overview & Model' },
+            { id: '#timepiece', label: 'Specifications & Engineering' },
+            { id: '#craftsmanship', label: 'Haute Horlogerie Craft' },
+            { id: '#coming-soon', label: 'VIP Allocation' },
+          ].map((item, idx) => (
             <button
               key={item.id}
               onClick={() => scrollToSection(item.id)}
-              className="text-left font-sans text-xs tracking-[0.2em] uppercase text-white/80 hover:text-white py-2 border-b border-white/[0.05] last:border-0 transition-colors flex items-center justify-between cursor-pointer"
+              className="text-left font-sans text-xs tracking-[0.2em] uppercase text-white/80 hover:text-white py-2.5 border-b border-white/[0.07] last:border-0 transition-colors flex items-center justify-between cursor-pointer"
             >
-              <span>{item.label}</span>
-              <span className="text-white/30 text-xs">→</span>
+              <span className="flex items-center gap-3">
+                <span className="font-mono text-[10px] text-white/30">0{idx + 1}</span>
+                <span>{item.label}</span>
+              </span>
+              <span className="text-white/40 text-xs">→</span>
             </button>
           ))}
           <div className="pt-2">
             <button
               onClick={startInspect}
-              className="w-full py-3 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-200 text-[10px] font-mono tracking-widest uppercase flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+              className="w-full py-3.5 rounded-full bg-white text-black font-sans text-[10px] font-bold tracking-[0.22em] uppercase flex items-center justify-center gap-2 cursor-pointer active:scale-95 shadow-xl transition-all"
             >
               <span>Launch 360° Tactile Inspection</span>
             </button>
@@ -401,33 +387,35 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         </div>
       )}
 
-      {/* 360° Tactile Inspection HUD Overlay */}
+      {/* ── 360° Tactile Inspection Mode Overlay ── */}
       {isInspecting && (
-        <div className="absolute inset-0 z-40 pointer-events-auto flex flex-col justify-between p-6 pt-16 pb-12 bg-black/40 backdrop-blur-xs">
+        <div className="absolute inset-0 z-40 pointer-events-auto flex flex-col justify-between p-6 pt-20 pb-12 bg-black/60 backdrop-blur-md">
           {/* Top Instruction Badge */}
-          <div className="flex flex-col items-center gap-1">
-            <div className="bg-blue-500/20 border border-blue-400/40 text-blue-200 px-4 py-1.5 rounded-full text-[10px] font-mono tracking-widest flex items-center gap-2 animate-pulse">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="bg-white/10 border border-white/25 text-white px-5 py-2 rounded-full text-[10px] font-mono tracking-widest flex items-center gap-2.5 shadow-2xl backdrop-blur-xl">
+              <svg className="w-3.5 h-3.5 text-blue-300 animate-spin" style={{ animationDuration: '6s' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              <span>DRAG IN ANY DIRECTION TO ROTATE</span>
+              <span>DRAG SCREEN TO ROTATE 360°</span>
             </div>
-            <p className="text-[10px] font-mono text-white/40 tracking-wider">Athena Calibre A01 · 3D Viewport</p>
+            <p className="text-[10px] font-mono text-white/50 tracking-wider">
+              Calibre A01 Titanium · Multi-Axis GlTF Viewport
+            </p>
           </div>
 
           {/* Bottom Exit Button */}
           <div className="flex flex-col items-center gap-3">
             <button
               onClick={endInspect}
-              className="w-full max-w-xs py-3.5 rounded-full font-sans text-xs tracking-[0.24em] uppercase font-bold bg-white text-black hover:bg-white/90 active:scale-95 transition-all shadow-[0_10px_30px_rgba(255,255,255,0.2)] cursor-pointer"
+              className="w-full max-w-xs py-3.5 rounded-full font-sans text-xs tracking-[0.24em] uppercase font-bold bg-white text-black hover:bg-white/90 active:scale-95 transition-all shadow-[0_10px_35px_rgba(255,255,255,0.25)] cursor-pointer"
             >
-              ✕ Exit 360° Inspection
+              ✕ Exit Inspection
             </button>
           </div>
         </div>
       )}
 
-      {/* Scrollable Mobile Choreography Container */}
+      {/* ── Scrollable Narrative Container ── */}
       <div
         ref={containerRef}
         onScroll={handleScroll}
@@ -436,36 +424,41 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         }`}
         style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
       >
-        {/* ── SECTION 1: HERO ── */}
+        {/* ══════════════════════════════════════════════════════════════
+            SECTION 1: HERO OVERVIEW
+        ══════════════════════════════════════════════════════════════ */}
         <section
           id="hero"
-          className="min-h-[100dvh] w-full flex flex-col justify-end p-5 pb-10 relative select-none"
+          className="min-h-[100dvh] w-full flex flex-col justify-end px-6 pb-12 relative select-none"
         >
-          {/* Ghost Watermark */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15">
-            <span className="text-[7.5rem] font-light tracking-[0.15em] text-white/20 select-none">
-              A01
+          {/* Subtle Ghost Brand Watermark */}
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+            <span className="text-[8rem] font-light tracking-[0.16em] text-white/20 select-none">
+              ATHENA
             </span>
           </div>
 
           <div className="relative z-10 flex flex-col items-center text-center">
-            <p className="font-mono text-[9px] tracking-[0.45em] uppercase text-blue-200/70 mb-2 animate-pulse">
-              SWISS AUTOMATIC · GENÈVE
-            </p>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-300/80" />
+              <p className="font-mono text-[10px] tracking-[0.4em] uppercase text-white/60">
+                SWISS AUTOMATIC · GENÈVE
+              </p>
+            </div>
 
-            <h1 className="text-3xl sm:text-4xl font-light tracking-tight text-white mb-2 leading-tight">
+            <h1 className="text-4xl sm:text-5xl font-light tracking-tight text-white mb-2 leading-none">
               Athena A01
             </h1>
 
-            <p className="font-sans text-xs text-white/50 leading-relaxed max-w-[280px] mb-6 font-light">
+            <p className="font-sans text-xs text-white/60 leading-relaxed max-w-[290px] mb-7 font-light">
               Pure mechanical restraint. Forged Grade 5 titanium with double-domed sapphire crystal.
             </p>
 
-            {/* Quick Action Controls */}
-            <div className="flex items-center gap-2.5 w-full max-w-xs justify-center">
+            {/* CTAs */}
+            <div className="flex items-center gap-3 w-full max-w-xs justify-center">
               <button
                 onClick={startInspect}
-                className="flex-1 py-3 px-4 rounded-full bg-white/[0.08] hover:bg-white/15 active:scale-95 border border-white/20 text-white font-sans text-[10px] tracking-[0.2em] uppercase transition-all backdrop-blur-md flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+                className="flex-1 py-3 px-4 rounded-full bg-white/[0.08] hover:bg-white/15 active:scale-95 border border-white/20 text-white font-sans text-[10px] font-medium tracking-[0.2em] uppercase transition-all backdrop-blur-md flex items-center justify-center gap-2 cursor-pointer shadow-lg"
               >
                 <svg className="w-3.5 h-3.5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
@@ -483,114 +476,121 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
           </div>
         </section>
 
-        {/* ── SECTION 2: THE TIMEPIECE & SPECS ── */}
+        {/* ══════════════════════════════════════════════════════════════
+            SECTION 2: SPECIFICATIONS & ARCHITECTURAL PRECISION
+        ══════════════════════════════════════════════════════════════ */}
         <section
           id="timepiece"
-          className="min-h-[100dvh] w-full flex flex-col justify-end p-5 pb-8 relative"
+          className="min-h-[100dvh] w-full flex flex-col justify-end px-6 pb-12 relative"
           style={{
-            background: 'linear-gradient(to bottom, transparent, rgba(4,4,7,0.92) 28%, #040407 100%)',
+            background: 'linear-gradient(to bottom, transparent, rgba(5,5,7,0.92) 20%, #050507 100%)',
           }}
         >
           <div className="relative z-10">
-            <p className="font-mono text-[9px] tracking-[0.35em] uppercase text-blue-300/60 mb-1">
-              SPECIFICATIONS
+            <p className="font-mono text-[9px] tracking-[0.38em] uppercase text-blue-200/70 mb-1.5">
+              SPECIFICATIONS & DIMENSIONS
             </p>
-            <h2 className="text-2xl font-light text-white mb-2 leading-snug">
+            <h2 className="text-3xl font-light text-white mb-2 leading-snug">
               Architectural Precision
             </h2>
-            <p className="font-sans text-xs text-white/45 mb-4 leading-relaxed max-w-xs font-light">
-              Every curve, bevel and component is balanced for effortless ergonomics and lifetime durability.
+            <p className="font-sans text-xs text-white/50 mb-6 leading-relaxed font-light max-w-sm">
+              Engineered with extreme tolerances. Every curve, bevel and component is balanced for effortless ergonomics and lifetime permanence.
             </p>
 
-            {/* Spec Cards 2x2 Grid */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {specsList.map((item, idx) => (
-                <button
+            {/* Spec Cards — 4 Comprehensive Luxury Rows */}
+            <div className="flex flex-col gap-2.5">
+              {[
+                {
+                  label: 'CASE & PROFILE',
+                  value: '42 MM',
+                  desc: 'Forged Grade 5 Titanium billet. 9.4mm slim profile with hand-satin brushed bevels.',
+                },
+                {
+                  label: 'CRYSTAL & OPTICS',
+                  value: '9H SAPPHIRE',
+                  desc: 'Double-domed sapphire with dual-sided anti-reflective vacuum vapor deposition.',
+                },
+                {
+                  label: 'CALIBRE ENGINE',
+                  value: '72H RESERVE',
+                  desc: 'In-House Calibre A01 automatic mechanical movement beating at 28,800 vph.',
+                },
+                {
+                  label: 'RATE & RESISTANCE',
+                  value: 'COSC ±2S/DAY',
+                  desc: 'Individually regulated across 5 positions. 100 metres / 10 ATM water resistance.',
+                },
+              ].map((item) => (
+                <div
                   key={item.label}
-                  onClick={() => setActiveSpec(idx)}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                    activeSpec === idx
-                      ? 'bg-blue-500/15 border-blue-400/40 shadow-lg'
-                      : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06]'
-                  }`}
+                  className="bg-white/[0.04] border border-white/10 rounded-2xl p-4 backdrop-blur-md"
                 >
-                  <p className="font-mono text-[8px] tracking-[0.25em] uppercase text-white/35 mb-1">
-                    {item.label}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[9px] tracking-[0.24em] uppercase text-white/40">
+                      {item.label}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-white tracking-wider">
+                      {item.value}
+                    </span>
+                  </div>
+                  <p className="font-sans text-[11px] text-white/70 leading-relaxed font-light">
+                    {item.desc}
                   </p>
-                  <p className="font-sans text-xs font-semibold text-white/95 leading-tight">
-                    {item.value}
-                  </p>
-                  <p className="font-sans text-[10px] text-white/45 mt-0.5 truncate">
-                    {item.title}
-                  </p>
-                </button>
+                </div>
               ))}
-            </div>
-
-            {/* Expanded Spec Detail Box */}
-            <div className="bg-white/[0.04] border border-white/10 rounded-2xl p-3.5 backdrop-blur-md">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-mono text-[8px] tracking-widest uppercase text-blue-300">
-                  {specsList[activeSpec].label} DETAILS
-                </span>
-                <span className="font-mono text-[9px] text-white/40">
-                  {specsList[activeSpec].value}
-                </span>
-              </div>
-              <p className="font-sans text-[11px] text-white/70 leading-relaxed font-light">
-                {specsList[activeSpec].detail}
-              </p>
             </div>
           </div>
         </section>
 
-        {/* ── SECTION 3: CRAFTSMANSHIP ── */}
+        {/* ══════════════════════════════════════════════════════════════
+            SECTION 3: CRAFTSMANSHIP & HAUTE HORLOGERIE
+        ══════════════════════════════════════════════════════════════ */}
         <section
           id="craftsmanship"
-          className="min-h-[100dvh] w-full flex flex-col justify-end p-5 pb-8 relative bg-[#040407]"
+          className="min-h-[100dvh] w-full flex flex-col justify-end px-6 pb-12 relative bg-[#050507]"
         >
           <div className="relative z-10">
-            <p className="font-mono text-[9px] tracking-[0.35em] uppercase text-blue-300/60 mb-1">
+            <p className="font-mono text-[9px] tracking-[0.38em] uppercase text-blue-200/70 mb-1.5">
               HAUTE HORLOGERIE
             </p>
-            <h2 className="text-2xl font-light text-white mb-2 leading-snug">
+            <h2 className="text-3xl font-light text-white mb-2 leading-snug">
               Crafted With Intent
             </h2>
-            <p className="font-sans text-xs text-white/45 mb-4 leading-relaxed font-light">
-              Composed rather than merely assembled. The Athena A01 embodies three pillars of mechanical excellence.
+            <p className="font-sans text-xs text-white/50 mb-6 leading-relaxed font-light">
+              Composed rather than merely assembled. The Athena A01 represents pure mechanical restraint across three core horological pillars.
             </p>
 
-            {/* 3 Pillars List */}
-            <div className="flex flex-col gap-2.5">
+            {/* 3 Pillars Editorial Cards */}
+            <div className="flex flex-col gap-3">
               {[
                 {
-                  num: '01',
+                  num: 'I',
                   title: 'Forged Grade 5 Titanium',
-                  desc: 'Machined from a single solid billet. 14 hours of multi-axis CNC milling and hand-satin finishing per case.',
+                  desc: 'Machined from a single solid aerospace-grade titanium billet. 14 hours of multi-axis CNC milling and hand-satin finishing per case.',
                 },
                 {
-                  num: '02',
+                  num: 'II',
                   title: 'Double-Domed Sapphire',
-                  desc: '9H hardness with dual-sided anti-reflective vacuum vapor deposition for zero optical distortion.',
+                  desc: '9H hardness sapphire crystal with zero-distortion optical geometry and dual-sided anti-reflective vacuum vapor deposition.',
                 },
                 {
-                  num: '03',
+                  num: 'III',
                   title: 'In-House Calibre A01',
-                  desc: 'Self-winding mechanical caliber with skeletonized tungsten micro-rotor and 72-hour power reserve.',
+                  desc: 'Self-winding mechanical engine featuring a skeletonized tungsten micro-rotor and 72-hour continuous power reserve.',
                 },
               ].map((pillar) => (
                 <div
                   key={pillar.num}
-                  className="flex items-start gap-3 bg-white/[0.03] border border-white/[0.08] rounded-2xl p-3.5 backdrop-blur-sm"
+                  className="flex items-start gap-3.5 bg-white/[0.03] border border-white/[0.09] rounded-2xl p-4 backdrop-blur-sm"
                 >
-                  <span className="font-mono text-[10px] text-blue-300 border border-blue-400/30 bg-blue-500/10 px-2 py-0.5 rounded-lg flex-shrink-0">
+                  <span className="font-serif text-lg text-blue-200/80 italic font-light px-2.5 py-0.5 rounded-xl bg-blue-500/10 border border-blue-400/20 flex-shrink-0">
                     {pillar.num}
                   </span>
                   <div>
-                    <h3 className="font-sans text-xs font-semibold text-white/90 mb-0.5">
+                    <h3 className="font-sans text-xs font-semibold text-white/95 mb-1 tracking-wide">
                       {pillar.title}
                     </h3>
-                    <p className="font-sans text-[11px] text-white/40 leading-relaxed font-light">
+                    <p className="font-sans text-[11px] text-white/50 leading-relaxed font-light">
                       {pillar.desc}
                     </p>
                   </div>
@@ -600,58 +600,60 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
           </div>
         </section>
 
-        {/* ── SECTION 4: VIP PREMIERE RESERVATION ── */}
+        {/* ══════════════════════════════════════════════════════════════
+            SECTION 4: VIP PREMIERE RESERVATION
+        ══════════════════════════════════════════════════════════════ */}
         <section
           id="coming-soon"
-          className="min-h-[100dvh] w-full flex flex-col items-center justify-end p-5 pb-10 text-center relative bg-[#030305]"
+          className="min-h-[100dvh] w-full flex flex-col items-center justify-end px-6 pb-14 text-center relative bg-[#040406]"
         >
-          <div className="relative z-10 w-full max-w-xs flex flex-col items-center">
-            <span className="font-mono text-[8px] tracking-[0.35em] uppercase text-blue-300/60 border border-blue-400/20 bg-blue-500/10 px-3 py-1 rounded-full mb-3">
+          <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
+            <span className="font-mono text-[9px] tracking-[0.32em] uppercase text-blue-200/80 border border-blue-400/25 bg-blue-500/10 px-3.5 py-1.5 rounded-full mb-4">
               LIMITED PRODUCTION · 250 PIECES
             </span>
 
-            <h2 className="text-3xl font-light text-white mb-1 leading-tight">
+            <h2 className="text-3xl sm:text-4xl font-light text-white mb-1.5 leading-tight">
               Coming Soon
             </h2>
-            <p className="font-mono text-[10px] tracking-[0.25em] uppercase text-white/40 mb-6">
+            <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-white/45 mb-6">
               Autumn 2026 Premiere
             </p>
 
             {emailSubmitted ? (
-              <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-4 flex flex-col items-center gap-1.5 shadow-xl animate-in zoom-in-95 duration-300">
-                <div className="w-8 h-8 rounded-full bg-emerald-400/20 flex items-center justify-center text-emerald-300 mb-1">
+              <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-5 flex flex-col items-center gap-2 shadow-2xl animate-in zoom-in-95 duration-300">
+                <div className="w-9 h-9 rounded-full bg-emerald-400/20 flex items-center justify-center text-emerald-300 text-base">
                   ✓
                 </div>
-                <p className="font-sans text-xs font-semibold text-white">
+                <p className="font-sans text-sm font-semibold text-white">
                   VIP Access Confirmed
                 </p>
-                <p className="font-sans text-[10px] text-white/50 leading-snug">
-                  You will receive exclusive allocation details prior to public release.
+                <p className="font-sans text-xs text-white/60 leading-relaxed">
+                  You have been placed on the private allocation register. Exclusive allocation details will be sent prior to public release.
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleSubscribe} className="flex flex-col gap-2.5 w-full">
+              <form onSubmit={handleSubscribe} className="flex flex-col gap-3 w-full">
                 <input
                   type="email"
                   value={emailValue}
                   onChange={(e) => setEmailValue(e.target.value)}
                   placeholder="Enter email for private allocation"
                   required
-                  className="w-full bg-white/[0.05] border border-white/15 rounded-full px-4 py-3 text-xs text-white text-center placeholder-white/30 outline-none focus:border-blue-400/60 font-sans transition-all shadow-inner"
+                  className="w-full bg-white/[0.06] border border-white/15 rounded-full px-5 py-3.5 text-xs text-white text-center placeholder-white/35 outline-none focus:border-white/40 font-sans transition-all shadow-inner"
                 />
                 <button
                   type="submit"
-                  className="w-full bg-white text-black py-3 rounded-full font-sans text-[10px] font-bold tracking-[0.24em] uppercase cursor-pointer active:scale-95 shadow-[0_8px_25px_rgba(255,255,255,0.2)] transition-all"
+                  className="w-full bg-white text-black py-3.5 rounded-full font-sans text-xs font-bold tracking-[0.24em] uppercase cursor-pointer active:scale-95 shadow-[0_10px_30px_rgba(255,255,255,0.22)] transition-all"
                 >
                   REQUEST ACCESS
                 </button>
               </form>
             )}
 
-            <div className="w-12 h-px bg-white/10 my-6" />
+            <div className="w-16 h-px bg-white/15 my-8" />
 
-            <p className="font-mono text-[8px] tracking-[0.3em] uppercase text-white/25">
-              ATHENA HOROLOGY · GENÈVE
+            <p className="font-mono text-[9px] tracking-[0.32em] uppercase text-white/30">
+              ATHENA HOROLOGY · GENÈVE · SWISS CALIBRE A01
             </p>
           </div>
         </section>

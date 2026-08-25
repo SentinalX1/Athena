@@ -9,7 +9,7 @@ import 'lenis/dist/lenis.css';
 import { smoothstep } from '@/lib/math';
 import { useResponsive } from '@/lib/useResponsive';
 import { AthenaLoadingScreen } from '@/app/components/loader/AthenaLoadingScreen';
-import { MobileFallbackScreen } from '@/app/components/mobile/MobileFallbackScreen';
+import { MobileView } from '@/app/components/mobile/MobileView';
 import { WatchModel } from '@/app/components/watch/WatchModel';
 import { Navbar } from '@/app/components/sections/Navbar';
 import { HeroSection } from '@/app/components/sections/HeroSection';
@@ -115,9 +115,29 @@ export default function HomePage() {
     }
   }, []);
 
-  // Render mobile/tablet fallback if screen is under 1024px
+  // Render mobile 3D Hybrid view if screen is under 1024px
   if (isMobile === true) {
-    return <MobileFallbackScreen />;
+    return (
+      <div className="relative w-full" style={{ fontFamily: 'Georgia, serif' }}>
+        {/* Official Iris Aperture Loading Screen (Identical on mobile and desktop) */}
+        {!isSessionCached && (
+          <AthenaLoadingScreen
+            isWatchLoaded={isWatchLoaded}
+            onComplete={() => {
+              if (typeof window !== 'undefined') {
+                sessionStorage.setItem('athena_loaded', 'true');
+              }
+              setIsLoaderComplete(true);
+            }}
+          />
+        )}
+
+        <MobileView
+          isLoaderComplete={isLoaderComplete}
+          onWatchLoaded={() => setIsWatchLoaded(true)}
+        />
+      </div>
+    );
   }
 
   const scrollRaw = scrollY / (winH || 1);

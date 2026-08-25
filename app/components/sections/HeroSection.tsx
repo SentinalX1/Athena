@@ -4,9 +4,19 @@ import React from 'react';
 
 interface HeroSectionProps {
   heroP: number;
+  onNavigate?: (target: string) => void;
 }
 
-export function HeroSection({ heroP }: HeroSectionProps) {
+export function HeroSection({ heroP, onNavigate }: HeroSectionProps) {
+  const handleCtaClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    if (onNavigate) {
+      onNavigate('#timepiece');
+    } else {
+      document.querySelector('#timepiece')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <section
       id="hero"
@@ -50,6 +60,7 @@ export function HeroSection({ heroP }: HeroSectionProps) {
       >
         <a
           href="#timepiece"
+          onClick={handleCtaClick}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -66,6 +77,7 @@ export function HeroSection({ heroP }: HeroSectionProps) {
             color: '#27272a',
             boxShadow: '0 8px 32px rgba(0,0,0,0.06)',
             fontFamily: 'system-ui, sans-serif',
+            cursor: 'pointer',
           }}
         >
           Discover The Collection

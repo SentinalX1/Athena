@@ -4,9 +4,20 @@ import React from 'react';
 
 interface NavbarProps {
   isVisible: boolean;
+  onNavigate?: (target: string) => void;
 }
 
-export function Navbar({ isVisible }: NavbarProps) {
+export function Navbar({ isVisible, onNavigate }: NavbarProps) {
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>, target: string) => {
+    e.preventDefault();
+    if (onNavigate) {
+      onNavigate(target);
+    } else {
+      const el = document.querySelector(target);
+      el?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-8 py-7 mix-blend-difference text-white transition-opacity duration-700 ${
@@ -14,9 +25,13 @@ export function Navbar({ isVisible }: NavbarProps) {
       }`}
       style={{ maxWidth: '1400px', margin: '0 auto' }}
     >
-      <span style={{ fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.28em' }}>
+      <a
+        href="#hero"
+        onClick={(e) => handleClick(e, '#hero')}
+        style={{ fontSize: '1.05rem', fontWeight: 700, letterSpacing: '0.28em', textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+      >
         ATHENA
-      </span>
+      </a>
       <nav
         style={{
           display: 'flex',
@@ -26,14 +41,29 @@ export function Navbar({ isVisible }: NavbarProps) {
           textTransform: 'uppercase',
         }}
       >
-        <a href="#timepiece" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <a
+          href="#timepiece"
+          onClick={(e) => handleClick(e, '#timepiece')}
+          style={{ textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+        >
           Timepieces
         </a>
-        <a href="#craftsmanship" style={{ textDecoration: 'none', color: 'inherit' }}>
+        <a
+          href="#craftsmanship"
+          onClick={(e) => handleClick(e, '#craftsmanship')}
+          style={{ textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+        >
           Craftsmanship
         </a>
       </nav>
       <button
+        onClick={() => {
+          if (onNavigate) {
+            onNavigate('#coming-soon');
+          } else {
+            document.querySelector('#coming-soon')?.scrollIntoView({ behavior: 'smooth' });
+          }
+        }}
         style={{
           fontSize: '0.62rem',
           letterSpacing: '0.2em',

@@ -72,6 +72,7 @@ export function WatchModel({
   }, [hourHand, minuteHand, secondHand, onModelReady]);
 
   const smoothRaw = useRef(0);
+  const isFirstFrame = useRef(true);
   const floatTime = useRef(0);
   const animTime = useRef(0);
 
@@ -97,12 +98,17 @@ export function WatchModel({
       );
     }
 
-    // Smooth scroll interpolation
-    smoothRaw.current = THREE.MathUtils.lerp(
-      smoothRaw.current,
-      scrollRaw,
-      1 - Math.pow(0.0005, delta)
-    );
+    // Instant initial position on page mount / refresh without lerp jump from 0
+    if (isFirstFrame.current) {
+      smoothRaw.current = scrollRaw;
+      isFirstFrame.current = false;
+    } else {
+      smoothRaw.current = THREE.MathUtils.lerp(
+        smoothRaw.current,
+        scrollRaw,
+        1 - Math.pow(0.0005, delta)
+      );
+    }
     const sp = smoothRaw.current;
 
     floatTime.current += delta;

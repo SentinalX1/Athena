@@ -11,6 +11,7 @@ interface MobileWatchCanvasProps {
   inspectRot: { x: number; y: number };
   isLoaderComplete: boolean;
   onWatchLoaded?: () => void;
+  navTarget?: { targetScroll: number; timestamp: number } | null;
 }
 
 export function MobileWatchCanvas({
@@ -19,6 +20,7 @@ export function MobileWatchCanvas({
   inspectRot,
   isLoaderComplete,
   onWatchLoaded,
+  navTarget,
 }: MobileWatchCanvasProps) {
   return (
     /*
@@ -55,6 +57,7 @@ export function MobileWatchCanvas({
             inspectRot={inspectRot}
             isLoaderComplete={isLoaderComplete}
             onModelReady={onWatchLoaded}
+            navTarget={navTarget}
           />
         </Suspense>
       </Canvas>

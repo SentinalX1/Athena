@@ -28,6 +28,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const [menuOpen, setMenuOpen] = useState(false);
   const [emailValue, setEmailValue] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [navTarget, setNavTarget] = useState<{ targetScroll: number; timestamp: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
@@ -36,10 +37,23 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const velocityY = useRef(0);
   const lastDragY = useRef(0);
 
-  //  Lenis Smooth Scroll Engine 
+  // Lenis Smooth Scroll Engine with scroll restoration across page reloads
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    // Restore saved scroll position from sessionStorage if present
+    const savedScroll = sessionStorage.getItem('athena_mobile_scroll');
+    if (savedScroll) {
+      const parsed = parseFloat(savedScroll);
+      if (!isNaN(parsed) && parsed > 0) {
+        el.scrollTop = parsed;
+        const maxScroll = el.scrollHeight - el.clientHeight;
+        if (maxScroll > 0) {
+          setScrollProgress((parsed / maxScroll) * 3.0);
+        }
+      }
+    }
 
     const lenis = new Lenis({
       wrapper: el,
@@ -54,11 +68,20 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
 
     lenisRef.current = lenis;
 
+    if (savedScroll) {
+      const parsed = parseFloat(savedScroll);
+      if (!isNaN(parsed) && parsed > 0) {
+        lenis.scrollTo(parsed, { immediate: true });
+      }
+    }
+
     const onLenisScroll = (e: { scroll: number; limit: number }) => {
       if (isInspecting) return;
       const maxScroll = e.limit || (el.scrollHeight - el.clientHeight);
       if (maxScroll <= 0) return;
-      setScrollProgress((e.scroll / maxScroll) * 3.0);
+      const sp = (e.scroll / maxScroll) * 3.0;
+      setScrollProgress(sp);
+      sessionStorage.setItem('athena_mobile_scroll', e.scroll.toString());
     };
 
     lenis.on('scroll', onLenisScroll);
@@ -75,7 +98,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
       lenis.destroy();
       lenisRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pause / resume Lenis when entering / exiting inspection
   useEffect(() => {
@@ -90,12 +113,23 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     if (!el) return;
     const maxScroll = el.scrollHeight - el.clientHeight;
     if (maxScroll <= 0) return;
-    setScrollProgress((el.scrollTop / maxScroll) * 3.0);
+    const sp = (el.scrollTop / maxScroll) * 3.0;
+    setScrollProgress(sp);
+    sessionStorage.setItem('athena_mobile_scroll', el.scrollTop.toString());
   };
 
+  // Direct section navigation with smooth coordinated 3D trajectory
   const scrollToSection = (id: string) => {
     setMenuOpen(false);
     setIsInspecting(false);
+
+    let targetScrollRaw = 0;
+    if (id === '#timepiece') targetScrollRaw = 1.0;
+    else if (id === '#craftsmanship') targetScrollRaw = 2.0;
+    else if (id === '#coming-soon') targetScrollRaw = 3.0;
+    else if (id === '#hero') targetScrollRaw = 0.0;
+
+    setNavTarget({ targetScroll: targetScrollRaw, timestamp: performance.now() });
 
     if (lenisRef.current) {
       lenisRef.current.scrollTo(id, {
@@ -160,7 +194,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* Inspection backdrop blur*/}
+      {/* Inspection backdrop blur */}
       <div
         className="fixed inset-0 z-[35] pointer-events-none"
         style={{
@@ -172,16 +206,17 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         }}
       />
 
-      {/* Fixed 3D Canvas & lighting*/}
+      {/* Fixed 3D Canvas & lighting */}
       <MobileWatchCanvas
         scrollProgress={scrollProgress}
         isInspecting={isInspecting}
         inspectRot={inspectRot}
         isLoaderComplete={isLoaderComplete}
         onWatchLoaded={onWatchLoaded}
+        navTarget={navTarget}
       />
 
-      {/* Header & navigation drawer*/}
+      {/* Header & navigation drawer */}
       <MobileHeader
         isInspecting={isInspecting}
         menuOpen={menuOpen}
@@ -196,7 +231,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         onStartInspect={startInspect}
       />
 
-      {/* 360° inspection overlay*/}
+      {/* 360° inspection overlay */}
       <MobileInspectOverlay
         isInspecting={isInspecting}
         onEndInspect={endInspect}
@@ -205,11 +240,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         onPointerUp={handlePointerUp}
       />
 
-      {/* Scrollable sections
-          IMPORTANT:
-          - zIndex 10 sits BELOW the watch at z-index 15
-          - touchAction: pan-y explicitly allows vertical scroll gestures
-     */}
+      {/* Scrollable sections */}
       <div
         ref={containerRef}
         onScroll={handleScroll}

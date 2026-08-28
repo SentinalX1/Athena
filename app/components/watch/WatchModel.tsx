@@ -104,10 +104,20 @@ export function WatchModel({
 
   const initQ = useRef<HandQuaternions | null>(null);
   if (!initQ.current && hourHand && minuteHand && secondHand) {
+    if (!hourHand.userData.initialQuaternion) {
+      hourHand.userData.initialQuaternion = hourHand.quaternion.clone();
+    }
+    if (!minuteHand.userData.initialQuaternion) {
+      minuteHand.userData.initialQuaternion = minuteHand.quaternion.clone();
+    }
+    if (!secondHand.userData.initialQuaternion) {
+      secondHand.userData.initialQuaternion = secondHand.quaternion.clone();
+    }
+
     initQ.current = {
-      hour: hourHand.quaternion.clone(),
-      minute: minuteHand.quaternion.clone(),
-      second: secondHand.quaternion.clone(),
+      hour: hourHand.userData.initialQuaternion.clone(),
+      minute: minuteHand.userData.initialQuaternion.clone(),
+      second: secondHand.userData.initialQuaternion.clone(),
     };
     // Initialize immediately in the 10:10:30 catalog pose
     applyHandRotations(

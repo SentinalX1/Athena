@@ -96,21 +96,33 @@ export function MobileWatchScene({
   const minuteHand = scene.getObjectByName('HandMinute') as THREE.Object3D | undefined;
   const secondHand = scene.getObjectByName('HandSecond') as THREE.Object3D | undefined;
 
-  // Center model geometry once
-  const centeredRef = useRef(false);
-  if (!centeredRef.current && scene) {
+  // Center model geometry once across all mounts
+  React.useEffect(() => {
+    if (!scene || scene.userData.centered) return;
     const box = new THREE.Box3().setFromObject(scene);
     scene.position.sub(box.getCenter(new THREE.Vector3()));
-    centeredRef.current = true;
-  }
+    scene.userData.centered = true;
+  }, [scene]);
 
   const initQ = useRef<HandQuaternions | null>(null);
   if (!initQ.current && hourHand && minuteHand && secondHand) {
+    if (!hourHand.userData.initialQuaternion) {
+      hourHand.userData.initialQuaternion = hourHand.quaternion.clone();
+    }
+    if (!minuteHand.userData.initialQuaternion) {
+      minuteHand.userData.initialQuaternion = minuteHand.quaternion.clone();
+    }
+    if (!secondHand.userData.initialQuaternion) {
+      secondHand.userData.initialQuaternion = secondHand.quaternion.clone();
+    }
+
     initQ.current = {
-      hour: hourHand.quaternion.clone(),
-      minute: minuteHand.quaternion.clone(),
-      second: secondHand.quaternion.clone(),
+      hour: hourHand.userData.initialQuaternion.clone(),
+      minute: minuteHand.userData.initialQuaternion.clone(),
+      second: secondHand.userData.initialQuaternion.clone(),
     };
+
+    // Apply exact 10:10:30 starting catalog pose
     applyHandRotations(
       START_HOUR,
       START_MINUTE,
@@ -118,8 +130,20 @@ export function MobileWatchScene({
       { hourHand, minuteHand, secondHand },
       initQ.current
     );
-    onModelReady?.();
   }
+
+  React.useEffect(() => {
+    if (initQ.current && hourHand && minuteHand && secondHand) {
+      applyHandRotations(
+        START_HOUR,
+        START_MINUTE,
+        START_SECOND,
+        { hourHand, minuteHand, secondHand },
+        initQ.current
+      );
+      onModelReady?.();
+    }
+  }, [hourHand, minuteHand, secondHand, onModelReady]);
 
   const animTime = useRef(0);
   const smoothProgress = useRef(0);

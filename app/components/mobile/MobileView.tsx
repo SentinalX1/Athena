@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment } from '@react-three/drei';
 import * as THREE from 'three';
@@ -38,20 +38,23 @@ function MobileWatchScene({
   const secondHand = scene.getObjectByName('HandSecond') as THREE.Object3D | undefined;
 
   // Center model geometry once
-  useEffect(() => {
-    if (!scene || scene.userData.centered) return;
+  const centeredRef = useRef(false);
+
+  if (!centeredRef.current && scene) {
     const box = new THREE.Box3().setFromObject(scene);
     scene.position.sub(box.getCenter(new THREE.Vector3()));
-    scene.userData.centered = true;
-  }, [scene]);
+    centeredRef.current = true;
+  }
 
   const initQ = useRef<HandQuaternions | null>(null);
+
   if (!initQ.current && hourHand && minuteHand && secondHand) {
     initQ.current = {
       hour: hourHand.quaternion.clone(),
       minute: minuteHand.quaternion.clone(),
       second: secondHand.quaternion.clone(),
     };
+
     applyHandRotations(
       START_HOUR,
       START_MINUTE,
@@ -59,35 +62,23 @@ function MobileWatchScene({
       { hourHand, minuteHand, secondHand },
       initQ.current
     );
-  }
 
-  useEffect(() => {
-    if (initQ.current && hourHand && minuteHand && secondHand) {
-      applyHandRotations(
-        START_HOUR,
-        START_MINUTE,
-        START_SECOND,
-        { hourHand, minuteHand, secondHand },
-        initQ.current
-      );
-      onModelReady?.();
-    }
-  }, [hourHand, minuteHand, secondHand, onModelReady]);
+    onModelReady?.();
+  }
 
   const animTime = useRef(0);
   const smoothProgress = useRef(0);
   const floatTime = useRef(0);
-
-  // Smooth inspect rotation damping
   const smoothInspectX = useRef(0);
   const smoothInspectY = useRef(0);
 
   useFrame((_, delta) => {
     if (!initQ.current || !groupRef.current) return;
 
-    // Real-time time animation
+    // ── Watch hand animation ──
     if (isLoaderComplete) {
       animTime.current += delta;
+
       updateWatchHandsAnimation(
         animTime.current,
         { hourHand, minuteHand, secondHand },
@@ -106,81 +97,104 @@ function MobileWatchScene({
     floatTime.current += delta;
     const t = floatTime.current;
 
-    // 360° Tactile Inspection Mode
+    // ── 360° Tactile Inspection Mode ──
     if (isInspecting) {
-      smoothInspectX.current = THREE.MathUtils.lerp(smoothInspectX.current, inspectRot.x, 0.12);
-      smoothInspectY.current = THREE.MathUtils.lerp(smoothInspectY.current, inspectRot.y, 0.12);
+      smoothInspectX.current = THREE.MathUtils.lerp(
+        smoothInspectX.current,
+        inspectRot.x,
+        0.12
+      );
 
-      groupRef.current.position.set(0, 0.05, 0.1);
-      groupRef.current.rotation.x = -0.20 + smoothInspectX.current;
-      groupRef.current.rotation.y = smoothInspectY.current + Math.sin(t * 0.4) * 0.015;
+      smoothInspectY.current = THREE.MathUtils.lerp(
+        smoothInspectY.current,
+        inspectRot.y,
+        0.12
+      );
+
+      groupRef.current.position.set(0, 0.0, 0);
+
+      groupRef.current.rotation.x =
+        -0.15 + smoothInspectX.current;
+
+      groupRef.current.rotation.y =
+        smoothInspectY.current;
+
       groupRef.current.rotation.z = 0;
-      groupRef.current.scale.set(2.1, 2.1, 2.1);
+
+      groupRef.current.scale.setScalar(2.05);
+
       return;
     }
 
-    // Smooth scroll interpolation
+    // ── Scroll-driven Choreography ──
     smoothProgress.current = THREE.MathUtils.lerp(
       smoothProgress.current,
       scrollProgress,
       1 - Math.pow(0.001, delta)
     );
+
     const sp = smoothProgress.current;
 
-    // Mobile Vertical Scroll Choreography:
-    // 0.0 - 0.9 : Hero (Majestic Center Stage, high scale)
-    // 0.9 - 1.8 : Specs Section (Upper stage showcase, angled dial)
-    // 1.8 - 2.7 : Craftsmanship (Side crown & profile bevel showcase)
-    // 2.7 - 3.5 : VIP Section (Lower stage macro silhouette)
+    // Transition weights per section
+    const p12 = smoothstep(0.3, 1.0, sp);   // Hero → Specs
+    const p23 = smoothstep(1.3, 2.0, sp);   // Specs → Craft
+    const p34 = smoothstep(2.3, 3.0, sp);   // Craft → VIP
 
-    const pSec2 = smoothstep(0.4, 1.1, sp);
-    const pSec3 = smoothstep(1.3, 2.1, sp);
-    const pSec4 = smoothstep(2.3, 3.0, sp);
+    const idleFloat =
+      Math.sin(t * 0.85) * 0.012 * (1 - p12);
 
-    const idleFloat = Math.sin(t * 0.8) * 0.015 * (1 - pSec2);
+    // ── Y Position: watch always inside camera frustum ──
+    // Hero:  0.06  (center-upper — watch is big so it fills frame)
+    // Specs: 0.26  (upper third — leaves bottom half for text)
+    // Craft: 0.22  (upper third — similar)
+    // VIP:   0.05  (center, small, silhouette)
+    let posY = 0.06 + idleFloat;
 
-    // Y Position:
-    // Starts at 0.12 (Hero center-upper), elevates smoothly to 0.42 (Specs), stays at 0.38 (Craft), lowers to -0.15 (VIP)
-    let posY = 0.12 + idleFloat;
-    if (sp >= 0.4 && sp < 1.5) {
-      posY = THREE.MathUtils.lerp(0.12, 0.45, pSec2);
-    } else if (sp >= 1.5 && sp < 2.5) {
-      posY = THREE.MathUtils.lerp(0.45, 0.38, pSec3);
-    } else if (sp >= 2.5) {
-      posY = THREE.MathUtils.lerp(0.38, -0.16, pSec4);
+    if (p12 > 0) {
+      posY = THREE.MathUtils.lerp(0.06, 0.26, p12);
     }
 
-    // X Position: Subtle balance shifts
-    let posX = 0;
-    if (sp >= 1.5 && sp < 2.5) {
-      posX = THREE.MathUtils.lerp(0.0, 0.08, pSec3);
-    } else if (sp >= 2.5) {
-      posX = THREE.MathUtils.lerp(0.08, 0.0, pSec4);
+    if (p23 > 0) {
+      posY = THREE.MathUtils.lerp(0.26, 0.22, p23);
     }
 
-    // Rotation: Keeps dial visible and well-lit across all sections
-    const rotX = THREE.MathUtils.lerp(-0.28, -0.16, pSec2);
-    let rotY = THREE.MathUtils.lerp(0.0, -0.32, pSec2);
-    if (sp >= 1.5) {
-      rotY = THREE.MathUtils.lerp(-0.32, 0.45, pSec3);
-    }
-    if (sp >= 2.5) {
-      rotY = THREE.MathUtils.lerp(0.45, 0.0, pSec4);
+    if (p34 > 0) {
+      posY = THREE.MathUtils.lerp(0.22, 0.05, p34);
     }
 
-    // Scale: Generous scale on mobile portrait displays
-    let scale = THREE.MathUtils.lerp(2.2, 1.58, pSec2);
-    if (sp >= 2.5) {
-      scale = THREE.MathUtils.lerp(1.58, 1.25, pSec4);
+    // ── Rotation ──
+    const rotX = THREE.MathUtils.lerp(-0.25, -0.12, p12);
+
+    let rotY = THREE.MathUtils.lerp(0.0, -0.30, p12);
+
+    if (p23 > 0) {
+      rotY = THREE.MathUtils.lerp(-0.30, 0.42, p23);
     }
 
-    groupRef.current.position.set(posX, posY, THREE.MathUtils.lerp(0.0, 0.12, pSec2));
+    if (p34 > 0) {
+      rotY = THREE.MathUtils.lerp(0.42, 0.0, p34);
+    }
+
+    // ── Scale ──
+    let scale = THREE.MathUtils.lerp(2.1, 1.35, p12);
+
+    if (p34 > 0) {
+      scale = THREE.MathUtils.lerp(1.35, 1.0, p34);
+    }
+
+    groupRef.current.position.set(
+      0,
+      posY,
+      THREE.MathUtils.lerp(0, 0.1, p12)
+    );
+
     groupRef.current.rotation.set(
       rotX,
-      rotY + Math.sin(t * 0.4) * 0.015,
-      THREE.MathUtils.lerp(0.0, -0.03, pSec2)
+      rotY + Math.sin(t * 0.4) * 0.012,
+      THREE.MathUtils.lerp(0, -0.02, p12)
     );
-    groupRef.current.scale.set(scale, scale, scale);
+
+    groupRef.current.scale.setScalar(scale);
   });
 
   return (
@@ -198,7 +212,10 @@ interface MobileViewProps {
   onWatchLoaded?: () => void;
 }
 
-export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps) {
+export function MobileView({
+  isLoaderComplete,
+  onWatchLoaded,
+}: MobileViewProps) {
   const [scrollProgress, setScrollProgress] = useState(0);
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectRot, setInspectRot] = useState({ x: 0, y: 0 });
@@ -209,23 +226,35 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
+  const velocityY = useRef(0);
+  const lastDragY = useRef(0);
 
-  // Scroll tracking inside mobile view
   const handleScroll = () => {
     if (isInspecting) return;
+
     const el = containerRef.current;
+
     if (!el) return;
-    const maxScroll = el.scrollHeight - el.clientHeight;
+
+    const maxScroll =
+      el.scrollHeight - el.clientHeight;
+
     if (maxScroll <= 0) return;
-    const progress = (el.scrollTop / maxScroll) * 3.0;
-    setScrollProgress(progress);
+
+    setScrollProgress(
+      (el.scrollTop / maxScroll) * 3.0
+    );
   };
 
-  const scrollToSection = (targetId: string) => {
+  const scrollToSection = (id: string) => {
     setMenuOpen(false);
     setIsInspecting(false);
-    const el = containerRef.current?.querySelector(targetId);
-    el?.scrollIntoView({ behavior: 'smooth' });
+
+    containerRef.current
+      ?.querySelector(id)
+      ?.scrollIntoView({
+        behavior: 'smooth',
+      });
   };
 
   const startInspect = () => {
@@ -238,22 +267,59 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     setIsInspecting(false);
   };
 
-  // Pointer drag events for 360° inspection mode
-  const handlePointerDown = (e: React.PointerEvent) => {
+  // ── Pointer handling for 360° inspection ──
+  const handlePointerDown = (
+    e: React.PointerEvent
+  ) => {
     if (!isInspecting) return;
+
     isDragging.current = true;
-    lastPointer.current = { x: e.clientX, y: e.clientY };
+
+    lastPointer.current = {
+      x: e.clientX,
+      y: e.clientY,
+    };
+
+    lastDragY.current = e.clientY;
+    velocityY.current = 0;
+
+    (
+      e.target as HTMLElement
+    ).setPointerCapture(e.pointerId);
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging.current || !isInspecting) return;
-    const dx = e.clientX - lastPointer.current.x;
-    const dy = e.clientY - lastPointer.current.y;
-    lastPointer.current = { x: e.clientX, y: e.clientY };
+  const handlePointerMove = (
+    e: React.PointerEvent
+  ) => {
+    if (
+      !isDragging.current ||
+      !isInspecting
+    ) {
+      return;
+    }
+
+    const dx =
+      e.clientX - lastPointer.current.x;
+
+    const dy =
+      e.clientY - lastPointer.current.y;
+
+    velocityY.current = dy;
+
+    lastPointer.current = {
+      x: e.clientX,
+      y: e.clientY,
+    };
 
     setInspectRot((prev) => ({
       y: prev.y + dx * 0.009,
-      x: Math.max(-0.55, Math.min(0.55, prev.x + dy * 0.009)),
+      x: Math.max(
+        -0.6,
+        Math.min(
+          0.6,
+          prev.x + dy * 0.009
+        )
+      ),
     }));
   };
 
@@ -261,37 +327,111 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     isDragging.current = false;
   };
 
-  const handleSubscribe = (e: React.FormEvent) => {
+  const handleSubscribe = (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
-    if (!emailValue || !emailValue.includes('@')) return;
+
+    if (!emailValue.includes('@')) {
+      return;
+    }
+
     setEmailSubmitted(true);
   };
 
+  // ── Section reveal opacity ──
+  const sp = scrollProgress;
+
+  const heroTextOpacity =
+    Math.max(0, 1 - sp * 3.5);
+
+  const specsOpacity =
+    smoothstep(0.7, 1.1, sp) *
+    (1 - smoothstep(1.6, 2.0, sp));
+
+  const craftOpacity =
+    smoothstep(1.7, 2.1, sp) *
+    (1 - smoothstep(2.5, 2.9, sp));
+
+  const vipOpacity =
+    smoothstep(2.6, 3.0, sp);
+
   return (
     <div
-      className="relative w-full h-[100dvh] bg-[#050507] text-white overflow-hidden select-none font-serif"
+      className="relative w-full h-[100dvh] overflow-hidden select-none"
+      style={{
+        background: '#050507',
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* ── Fixed 3D WebGL Canvas Layer with Studio Multi-Light Rig ── */}
-      <div className="absolute inset-0 z-0 pointer-events-none">
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          FIXED 3D CANVAS
+
+          IMPORTANT:
+          - zIndex 15 keeps the watch visually ABOVE sections
+          - pointerEvents none allows touch/scroll gestures
+            to pass through to the scroll container
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+
+          // Watch visually above scroll sections
+          zIndex: isInspecting ? 45 : 15,
+
+          // CRITICAL:
+          // The canvas never captures scrolling/touch input
+          pointerEvents: 'none',
+        }}
+      >
         <Canvas
           dpr={[1, 1.5]}
-          camera={{ position: [0, 0, 2.5], fov: 46 }}
-          style={{ position: 'absolute', inset: 0 }}
+          camera={{
+            position: [0, 0, 2.5],
+            fov: 46,
+          }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+          }}
         >
-          {/* Studio Horology Lighting: High ambient + balanced key/fill/rim so titanium & sapphire gleam */}
-          <ambientLight intensity={1.1} />
-          <directionalLight position={[3, 5, 4]} intensity={2.2} color="#FFFFFF" />
-          <directionalLight position={[-3, -1, 3]} intensity={1.2} color="#D0E0FF" />
-          <directionalLight position={[0, 6, -2]} intensity={1.5} color="#FFF5EA" />
-          <pointLight position={[0, 0.2, 2.5]} intensity={1.4} color="#FFFFFF" />
+          {/* Studio Horology 5-Point Lighting Rig */}
+          <ambientLight intensity={1.2} />
+
+          <directionalLight
+            position={[4, 6, 5]}
+            intensity={2.4}
+            color="#FFFFFF"
+          />
+
+          <directionalLight
+            position={[-4, -1, 3]}
+            intensity={1.4}
+            color="#C8DCFF"
+          />
+
+          <directionalLight
+            position={[0, 7, -2]}
+            intensity={1.6}
+            color="#FFF4E8"
+          />
+
+          <pointLight
+            position={[0, 0.5, 3]}
+            intensity={1.8}
+            color="#FFFFFF"
+          />
+
           <Environment preset="city" />
+
           <Suspense fallback={null}>
             <MobileWatchScene
-              scrollProgress={isInspecting ? 0 : scrollProgress}
+              scrollProgress={scrollProgress}
               isInspecting={isInspecting}
               inspectRot={inspectRot}
               isLoaderComplete={isLoaderComplete}
@@ -301,359 +441,1212 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         </Canvas>
       </div>
 
-      {/* ── Ambient Velvet Gradients (No grain / noise artifacts) ── */}
-      <div className="absolute inset-0 pointer-events-none z-[1]">
-        <div
-          className="absolute inset-0"
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          FIXED HEADER — always visible
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <header
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 60,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '1rem 1.5rem',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          background: 'rgba(5,5,7,0.45)',
+          borderBottom:
+            '1px solid rgba(255,255,255,0.07)',
+        }}
+      >
+        <button
+          onClick={() =>
+            scrollToSection('#hero')
+          }
           style={{
-            background: `
-              radial-gradient(ellipse 80% 50% at 50% 25%, rgba(195, 215, 245, 0.12) 0%, transparent 60%),
-              radial-gradient(ellipse 70% 60% at 50% 85%, rgba(130, 155, 195, 0.08) 0%, transparent 70%)
-            `,
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            letterSpacing: '0.32em',
+            color: '#fff',
+            cursor: 'pointer',
+            fontFamily: 'Georgia, serif',
           }}
-        />
-      </div>
-
-      {/* ── Fixed Mobile Luxury Header ── */}
-      <header className="absolute top-0 left-0 right-0 z-40 px-6 pt-5 pb-4 flex items-center justify-between pointer-events-auto backdrop-blur-lg bg-[#050507]/40 border-b border-white/[0.07]">
-        <a
-          href="#hero"
-          onClick={(e) => {
-            e.preventDefault();
-            scrollToSection('#hero');
-          }}
-          className="text-base font-bold tracking-[0.32em] text-white cursor-pointer select-none"
         >
           ATHENA
-        </a>
+        </button>
 
-        <div className="flex items-center gap-3">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+          }}
+        >
           <button
             onClick={startInspect}
-            className="flex items-center gap-1.5 bg-white/[0.08] hover:bg-white/15 border border-white/20 px-3 py-1.5 rounded-full text-[10px] font-mono tracking-widest text-white/90 cursor-pointer active:scale-95 transition-all shadow-sm"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background:
+                'rgba(255,255,255,0.07)',
+              border:
+                '1px solid rgba(255,255,255,0.18)',
+              borderRadius: '9999px',
+              padding:
+                '0.35rem 0.75rem',
+              fontSize: '0.6rem',
+              fontFamily: 'monospace',
+              letterSpacing: '0.18em',
+              color:
+                'rgba(255,255,255,0.88)',
+              cursor: 'pointer',
+            }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: '#60a5fa',
+                animation:
+                  'pulse 2s infinite',
+              }}
+            />
+
             360° VIEW
           </button>
 
           <button
-            onClick={() => setMenuOpen(!menuOpen)}
-            className="p-2 rounded-full bg-white/[0.06] border border-white/15 text-white cursor-pointer active:scale-95 transition-all"
-            aria-label="Toggle navigation menu"
+            onClick={() =>
+              setMenuOpen(!menuOpen)
+            }
+            style={{
+              background:
+                'rgba(255,255,255,0.06)',
+              border:
+                '1px solid rgba(255,255,255,0.13)',
+              borderRadius: '50%',
+              width: 34,
+              height: 34,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color:
+                'rgba(255,255,255,0.88)',
+            }}
+            aria-label="Menu"
           >
-            <svg className="w-4 h-4 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+            >
               {menuOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M6 18L18 6M6 6l12 12" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M4 7h16M4 12h16M4 17h16" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 7h16M4 12h16M4 17h16"
+                />
               )}
             </svg>
           </button>
         </div>
       </header>
 
-      {/* ── Slide-Down Luxury Navigation Drawer ── */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          NAVIGATION DRAWER
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {menuOpen && (
-        <div className="absolute top-[65px] left-0 right-0 z-50 bg-[#07070b]/98 border-b border-white/15 backdrop-blur-2xl px-6 py-6 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-top duration-300">
-          <p className="font-mono text-[9px] tracking-[0.35em] uppercase text-white/40 mb-1">
+        <div
+          style={{
+            position: 'fixed',
+            top: 62,
+            left: 0,
+            right: 0,
+            zIndex: 58,
+            background:
+              'rgba(7,7,11,0.98)',
+            borderBottom:
+              '1px solid rgba(255,255,255,0.12)',
+            backdropFilter: 'blur(32px)',
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.25rem',
+            boxShadow:
+              '0 24px 60px rgba(0,0,0,0.6)',
+          }}
+        >
+          <p
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '0.5rem',
+              letterSpacing: '0.35em',
+              color:
+                'rgba(255,255,255,0.35)',
+              textTransform: 'uppercase',
+              marginBottom: '0.75rem',
+            }}
+          >
             ATHENA HOROLOGY
           </p>
+
           {[
-            { id: '#hero', label: 'Overview & Model' },
-            { id: '#timepiece', label: 'Specifications & Engineering' },
-            { id: '#craftsmanship', label: 'Haute Horlogerie Craft' },
-            { id: '#coming-soon', label: 'VIP Allocation' },
-          ].map((item, idx) => (
+            {
+              id: '#hero',
+              label: 'Overview & Model',
+              idx: '01',
+            },
+            {
+              id: '#timepiece',
+              label:
+                'Specifications & Dimensions',
+              idx: '02',
+            },
+            {
+              id: '#craftsmanship',
+              label:
+                'Haute Horlogerie Craft',
+              idx: '03',
+            },
+            {
+              id: '#coming-soon',
+              label:
+                'VIP Premiere Allocation',
+              idx: '04',
+            },
+          ].map((item) => (
             <button
               key={item.id}
-              onClick={() => scrollToSection(item.id)}
-              className="text-left font-sans text-xs tracking-[0.2em] uppercase text-white/80 hover:text-white py-2.5 border-b border-white/[0.07] last:border-0 transition-colors flex items-center justify-between cursor-pointer"
+              onClick={() =>
+                scrollToSection(item.id)
+              }
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom:
+                  '1px solid rgba(255,255,255,0.07)',
+                padding: '0.75rem 0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'space-between',
+                cursor: 'pointer',
+                color:
+                  'rgba(255,255,255,0.8)',
+                fontSize: '0.7rem',
+                fontFamily:
+                  'system-ui, sans-serif',
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                textAlign: 'left',
+              }}
             >
-              <span className="flex items-center gap-3">
-                <span className="font-mono text-[10px] text-white/30">0{idx + 1}</span>
-                <span>{item.label}</span>
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    fontSize: '0.55rem',
+                    color:
+                      'rgba(255,255,255,0.3)',
+                  }}
+                >
+                  {item.idx}
+                </span>
+
+                {item.label}
               </span>
-              <span className="text-white/40 text-xs">→</span>
+
+              <span
+                style={{
+                  color:
+                    'rgba(255,255,255,0.35)',
+                }}
+              >
+                →
+              </span>
             </button>
           ))}
-          <div className="pt-2">
-            <button
-              onClick={startInspect}
-              className="w-full py-3.5 rounded-full bg-white text-black font-sans text-[10px] font-bold tracking-[0.22em] uppercase flex items-center justify-center gap-2 cursor-pointer active:scale-95 shadow-xl transition-all"
-            >
-              <span>Launch 360° Tactile Inspection</span>
-            </button>
-          </div>
+
+          <button
+            onClick={startInspect}
+            style={{
+              marginTop: '1rem',
+              width: '100%',
+              padding: '0.85rem',
+              borderRadius: 9999,
+              background: '#fff',
+              color: '#000',
+              border: 'none',
+              fontSize: '0.62rem',
+              fontFamily:
+                'system-ui, sans-serif',
+              fontWeight: 700,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              boxShadow:
+                '0 8px 24px rgba(255,255,255,0.2)',
+            }}
+          >
+            Launch 360° Tactile Inspection
+          </button>
         </div>
       )}
 
-      {/* ── 360° Tactile Inspection Mode Overlay ── */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          360° INSPECTION OVERLAY
+          No backdrop blur or dark background.
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isInspecting && (
-        <div className="absolute inset-0 z-40 pointer-events-auto flex flex-col justify-between p-6 pt-20 pb-12 bg-black/60 backdrop-blur-md">
-          {/* Top Instruction Badge */}
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="bg-white/10 border border-white/25 text-white px-5 py-2 rounded-full text-[10px] font-mono tracking-widest flex items-center gap-2.5 shadow-2xl backdrop-blur-xl">
-              <svg className="w-3.5 h-3.5 text-blue-300 animate-spin" style={{ animationDuration: '6s' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            pointerEvents: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding:
+              '4.5rem 1.5rem 2.5rem',
+            touchAction: 'none',
+          }}
+        >
+          {/* Top Instruction Pill */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.4rem',
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+                background:
+                  'rgba(0,0,0,0.55)',
+                border:
+                  '1px solid rgba(255,255,255,0.22)',
+                borderRadius: 9999,
+                padding:
+                  '0.45rem 1.1rem',
+                backdropFilter: 'blur(8px)',
+                fontSize: '0.6rem',
+                fontFamily: 'monospace',
+                letterSpacing: '0.2em',
+                color: '#fff',
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#93c5fd"
+                strokeWidth="2"
+                style={{
+                  animation:
+                    'spin 6s linear infinite',
+                }}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
               </svg>
-              <span>DRAG SCREEN TO ROTATE 360°</span>
+
+              DRAG TO ROTATE 360°
             </div>
-            <p className="text-[10px] font-mono text-white/50 tracking-wider">
-              Calibre A01 Titanium · Multi-Axis GlTF Viewport
+
+            <p
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '0.55rem',
+                color:
+                  'rgba(255,255,255,0.45)',
+                letterSpacing: '0.15em',
+              }}
+            >
+              Calibre A01 · Multi-Axis Viewport
             </p>
           </div>
 
-          {/* Bottom Exit Button */}
-          <div className="flex flex-col items-center gap-3">
-            <button
-              onClick={endInspect}
-              className="w-full max-w-xs py-3.5 rounded-full font-sans text-xs tracking-[0.24em] uppercase font-bold bg-white text-black hover:bg-white/90 active:scale-95 transition-all shadow-[0_10px_35px_rgba(255,255,255,0.25)] cursor-pointer"
-            >
-              ✕ Exit Inspection
-            </button>
-          </div>
+          {/* Bottom Exit */}
+          <button
+            onClick={endInspect}
+            style={{
+              width: '100%',
+              padding: '0.9rem',
+              borderRadius: 9999,
+              background: '#fff',
+              color: '#000',
+              border: 'none',
+              fontSize: '0.62rem',
+              fontFamily:
+                'system-ui, sans-serif',
+              fontWeight: 700,
+              letterSpacing: '0.22em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              boxShadow:
+                '0 10px 35px rgba(255,255,255,0.28)',
+            }}
+          >
+            ✕ Exit Inspection
+          </button>
         </div>
       )}
 
-      {/* ── Scrollable Narrative Container ── */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          SCROLLABLE SECTIONS
+
+          z-index 10 sits BELOW the watch at z-index 15.
+
+          IMPORTANT:
+          touchAction: pan-y explicitly tells the browser
+          that normal vertical touch gestures should scroll
+          this container.
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className={`relative z-10 w-full h-full overflow-y-auto overflow-x-hidden ${
-          isInspecting ? 'pointer-events-none' : 'pointer-events-auto'
-        }`}
-        style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
+        style={{
+          position: 'relative',
+
+          // Below watch visually
+          zIndex: isInspecting ? 0 : 10,
+
+          width: '100%',
+          height: '100%',
+
+          overflowY: isInspecting
+            ? 'hidden'
+            : 'auto',
+
+          overflowX: 'hidden',
+
+          scrollbarWidth: 'none',
+
+          // Scroll layer receives normal interaction
+          pointerEvents: isInspecting
+            ? 'none'
+            : 'auto',
+
+          // CRITICAL MOBILE SCROLL FIX
+          touchAction: isInspecting
+            ? 'none'
+            : 'pan-y',
+
+          overscrollBehaviorY: 'contain',
+        }}
       >
-        {/* ══════════════════════════════════════════════════════════════
-            SECTION 1: HERO OVERVIEW
-        ══════════════════════════════════════════════════════════════ */}
+        {/* ══ SECTION 1: HERO ══════════════════════════════════════════ */}
         <section
           id="hero"
-          className="min-h-[100dvh] w-full flex flex-col justify-end px-6 pb-12 relative select-none"
+          style={{
+            minHeight: '100dvh',
+            width: '100%',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+
+            // Signature high-key silver gradient
+            background:
+              'radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.96) 0%, rgba(224,228,234,0.88) 55%, rgba(200,207,215,1) 100%)',
+          }}
         >
-          {/* Subtle Ghost Brand Watermark */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-            <span className="text-[8rem] font-light tracking-[0.16em] text-white/20 select-none">
+          {/* Ghost ATHENA watermark */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              top: '-6%',
+              opacity:
+                Math.max(
+                  0,
+                  1 - heroTextOpacity < 0.8
+                    ? 0
+                    : 0.28
+                ),
+            }}
+          >
+            <span
+              style={{
+                fontSize:
+                  'clamp(3.2rem, 17vw, 6rem)',
+                fontWeight: 300,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                color:
+                  'rgba(140,145,155,1)',
+                userSelect: 'none',
+                lineHeight: 1,
+                fontFamily:
+                  'Georgia, serif',
+              }}
+            >
               ATHENA
             </span>
           </div>
 
-          <div className="relative z-10 flex flex-col items-center text-center">
-            <div className="flex items-center gap-2 mb-2.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-300/80" />
-              <p className="font-mono text-[10px] tracking-[0.4em] uppercase text-white/60">
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* Hero Bottom Text & CTAs */}
+          <div
+            style={{
+              position: 'relative',
+              zIndex: 5,
+              padding:
+                '0 1.5rem 2.25rem',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              opacity:
+                Math.max(
+                  0,
+                  heroTextOpacity
+                ),
+              transform: `translateY(${
+                (1 -
+                  Math.max(
+                    0,
+                    heroTextOpacity
+                  )) *
+                20
+              }px)`,
+            }}
+          >
+            {/* Eyebrow */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                marginBottom: '0.5rem',
+              }}
+            >
+              <span
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: '50%',
+                  background: '#3b82f6',
+                }}
+              />
+
+              <span
+                style={{
+                  fontFamily: 'monospace',
+                  fontSize: '0.55rem',
+                  letterSpacing: '0.36em',
+                  textTransform: 'uppercase',
+                  color: '#4b5563',
+                }}
+              >
                 SWISS AUTOMATIC · GENÈVE
-              </p>
+              </span>
             </div>
 
-            <h1 className="text-4xl sm:text-5xl font-light tracking-tight text-white mb-2 leading-none">
+            {/* Title */}
+            <h1
+              style={{
+                fontFamily:
+                  'Georgia, serif',
+                fontSize:
+                  'clamp(1.9rem, 7.5vw, 2.5rem)',
+                fontWeight: 300,
+                letterSpacing: '-0.01em',
+                color: '#18181b',
+                marginBottom: '0.55rem',
+                lineHeight: 1.1,
+              }}
+            >
               Athena A01
             </h1>
 
-            <p className="font-sans text-xs text-white/60 leading-relaxed max-w-[290px] mb-7 font-light">
+            {/* Tagline */}
+            <p
+              style={{
+                fontFamily:
+                  'system-ui, sans-serif',
+                fontSize: '0.72rem',
+                color: '#6b7280',
+                lineHeight: 1.65,
+                maxWidth: 270,
+                marginBottom: '1.5rem',
+                fontWeight: 300,
+              }}
+            >
               Pure mechanical restraint. Forged Grade 5 titanium with double-domed sapphire crystal.
             </p>
 
-            {/* CTAs */}
-            <div className="flex items-center gap-3 w-full max-w-xs justify-center">
+            {/* CTA Row */}
+            <div
+              style={{
+                display: 'flex',
+                gap: '0.65rem',
+                width: '100%',
+                maxWidth: 300,
+              }}
+            >
               <button
                 onClick={startInspect}
-                className="flex-1 py-3 px-4 rounded-full bg-white/[0.08] hover:bg-white/15 active:scale-95 border border-white/20 text-white font-sans text-[10px] font-medium tracking-[0.2em] uppercase transition-all backdrop-blur-md flex items-center justify-center gap-2 cursor-pointer shadow-lg"
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.4rem',
+                  padding: '0.75rem 0',
+                  borderRadius: 9999,
+                  background:
+                    'rgba(255,255,255,0.75)',
+                  border:
+                    '1px solid rgba(255,255,255,0.9)',
+                  color: '#18181b',
+                  fontSize: '0.6rem',
+                  fontFamily:
+                    'system-ui, sans-serif',
+                  fontWeight: 600,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                  backdropFilter:
+                    'blur(12px)',
+                  boxShadow:
+                    '0 4px 16px rgba(0,0,0,0.06)',
+                }}
               >
-                <svg className="w-3.5 h-3.5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#2563eb"
+                  strokeWidth="2"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"
+                  />
                 </svg>
-                <span>360° Inspect</span>
+
+                360° VIEW
               </button>
 
               <button
-                onClick={() => scrollToSection('#timepiece')}
-                className="flex-1 py-3 px-4 rounded-full bg-white text-black font-sans text-[10px] font-bold tracking-[0.22em] uppercase active:scale-95 transition-all shadow-[0_8px_25px_rgba(255,255,255,0.2)] cursor-pointer"
+                onClick={() =>
+                  scrollToSection(
+                    '#timepiece'
+                  )
+                }
+                style={{
+                  flex: 1,
+                  padding: '0.75rem 0',
+                  borderRadius: 9999,
+                  background: '#18181b',
+                  color: '#fff',
+                  border: 'none',
+                  fontSize: '0.6rem',
+                  fontFamily:
+                    'system-ui, sans-serif',
+                  fontWeight: 700,
+                  letterSpacing: '0.18em',
+                  textTransform:
+                    'uppercase',
+                  cursor: 'pointer',
+                  boxShadow:
+                    '0 8px 24px rgba(0,0,0,0.28)',
+                }}
               >
-                Explore ↓
+                DISCOVER ↓
               </button>
             </div>
           </div>
         </section>
 
-        {/* ══════════════════════════════════════════════════════════════
-            SECTION 2: SPECIFICATIONS & ARCHITECTURAL PRECISION
-        ══════════════════════════════════════════════════════════════ */}
+        {/* ══ SECTION 2: SPECIFICATIONS ════════════════════════════════ */}
         <section
           id="timepiece"
-          className="min-h-[100dvh] w-full flex flex-col justify-end px-6 pb-12 relative"
           style={{
-            background: 'linear-gradient(to bottom, transparent, rgba(5,5,7,0.92) 20%, #050507 100%)',
+            minHeight: '100dvh',
+            width: '100%',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            background: '#050505',
           }}
         >
-          <div className="relative z-10">
-            <p className="font-mono text-[9px] tracking-[0.38em] uppercase text-blue-200/70 mb-1.5">
-              SPECIFICATIONS & DIMENSIONS
-            </p>
-            <h2 className="text-3xl font-light text-white mb-2 leading-snug">
-              Architectural Precision
-            </h2>
-            <p className="font-sans text-xs text-white/50 mb-6 leading-relaxed font-light max-w-sm">
-              Engineered with extreme tolerances. Every curve, bevel and component is balanced for effortless ergonomics and lifetime permanence.
+          <div
+            style={{
+              padding:
+                '0 1.5rem 2.5rem',
+              opacity: specsOpacity,
+              transform: `translateY(${
+                (1 - specsOpacity) * 20
+              }px)`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '0.52rem',
+                letterSpacing: '0.3em',
+                textTransform: 'uppercase',
+                color:
+                  'rgba(255,255,255,0.38)',
+                marginBottom: '0.4rem',
+              }}
+            >
+              ATHENA / A01
             </p>
 
-            {/* Spec Cards — 4 Comprehensive Luxury Rows */}
-            <div className="flex flex-col gap-2.5">
+            <h2
+              style={{
+                fontFamily:
+                  'Georgia, serif',
+                fontSize:
+                  'clamp(1.5rem, 5.5vw, 2rem)',
+                fontWeight: 300,
+                color: '#fff',
+                marginBottom: '0.55rem',
+                lineHeight: 1.2,
+              }}
+            >
+              A New Standard
+              <br />
+              In{' '}
+              <em
+                style={{
+                  fontStyle: 'italic',
+                  color:
+                    'rgba(255,255,255,0.6)',
+                }}
+              >
+                Automatic Engineering
+              </em>
+            </h2>
+
+            <p
+              style={{
+                fontFamily:
+                  'system-ui, sans-serif',
+                fontSize: '0.72rem',
+                color:
+                  'rgba(255,255,255,0.48)',
+                lineHeight: 1.65,
+                marginBottom: '1.25rem',
+                fontWeight: 300,
+              }}
+            >
+              Forged Grade 5 titanium. Double-domed sapphire. Engineered around restraint, precision and permanence.
+            </p>
+
+            <div
+              style={{
+                width: '100%',
+                height: 1,
+                background:
+                  'rgba(255,255,255,0.08)',
+                marginBottom: '1rem',
+              }}
+            />
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  '1fr 1fr',
+                gap: '0.9rem 1.25rem',
+              }}
+            >
               {[
                 {
-                  label: 'CASE & PROFILE',
+                  label: 'CASE',
                   value: '42 MM',
-                  desc: 'Forged Grade 5 Titanium billet. 9.4mm slim profile with hand-satin brushed bevels.',
                 },
                 {
-                  label: 'CRYSTAL & OPTICS',
-                  value: '9H SAPPHIRE',
-                  desc: 'Double-domed sapphire with dual-sided anti-reflective vacuum vapor deposition.',
+                  label: 'MATERIAL',
+                  value:
+                    'GRADE 5 TITANIUM',
                 },
                 {
-                  label: 'CALIBRE ENGINE',
-                  value: '72H RESERVE',
-                  desc: 'In-House Calibre A01 automatic mechanical movement beating at 28,800 vph.',
+                  label: 'MOVEMENT',
+                  value: 'AUTOMATIC',
                 },
                 {
-                  label: 'RATE & RESISTANCE',
-                  value: 'COSC ±2S/DAY',
-                  desc: 'Individually regulated across 5 positions. 100 metres / 10 ATM water resistance.',
+                  label: 'CRYSTAL',
+                  value:
+                    'DOUBLE-DOMED SAPPHIRE',
                 },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="bg-white/[0.04] border border-white/10 rounded-2xl p-4 backdrop-blur-md"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-[9px] tracking-[0.24em] uppercase text-white/40">
-                      {item.label}
-                    </span>
-                    <span className="font-mono text-[11px] font-bold text-white tracking-wider">
-                      {item.value}
-                    </span>
-                  </div>
-                  <p className="font-sans text-[11px] text-white/70 leading-relaxed font-light">
-                    {item.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+              ].map(
+                ({
+                  label,
+                  value,
+                }) => (
+                  <div key={label}>
+                    <p
+                      style={{
+                        fontFamily:
+                          'monospace',
+                        fontSize: '0.5rem',
+                        letterSpacing:
+                          '0.24em',
+                        textTransform:
+                          'uppercase',
+                        color:
+                          'rgba(255,255,255,0.32)',
+                        marginBottom:
+                          '0.2rem',
+                      }}
+                    >
+                      {label}
+                    </p>
 
-        {/* ══════════════════════════════════════════════════════════════
-            SECTION 3: CRAFTSMANSHIP & HAUTE HORLOGERIE
-        ══════════════════════════════════════════════════════════════ */}
-        <section
-          id="craftsmanship"
-          className="min-h-[100dvh] w-full flex flex-col justify-end px-6 pb-12 relative bg-[#050507]"
-        >
-          <div className="relative z-10">
-            <p className="font-mono text-[9px] tracking-[0.38em] uppercase text-blue-200/70 mb-1.5">
-              HAUTE HORLOGERIE
-            </p>
-            <h2 className="text-3xl font-light text-white mb-2 leading-snug">
-              Crafted With Intent
-            </h2>
-            <p className="font-sans text-xs text-white/50 mb-6 leading-relaxed font-light">
-              Composed rather than merely assembled. The Athena A01 represents pure mechanical restraint across three core horological pillars.
-            </p>
-
-            {/* 3 Pillars Editorial Cards */}
-            <div className="flex flex-col gap-3">
-              {[
-                {
-                  num: 'I',
-                  title: 'Forged Grade 5 Titanium',
-                  desc: 'Machined from a single solid aerospace-grade titanium billet. 14 hours of multi-axis CNC milling and hand-satin finishing per case.',
-                },
-                {
-                  num: 'II',
-                  title: 'Double-Domed Sapphire',
-                  desc: '9H hardness sapphire crystal with zero-distortion optical geometry and dual-sided anti-reflective vacuum vapor deposition.',
-                },
-                {
-                  num: 'III',
-                  title: 'In-House Calibre A01',
-                  desc: 'Self-winding mechanical engine featuring a skeletonized tungsten micro-rotor and 72-hour continuous power reserve.',
-                },
-              ].map((pillar) => (
-                <div
-                  key={pillar.num}
-                  className="flex items-start gap-3.5 bg-white/[0.03] border border-white/[0.09] rounded-2xl p-4 backdrop-blur-sm"
-                >
-                  <span className="font-serif text-lg text-blue-200/80 italic font-light px-2.5 py-0.5 rounded-xl bg-blue-500/10 border border-blue-400/20 flex-shrink-0">
-                    {pillar.num}
-                  </span>
-                  <div>
-                    <h3 className="font-sans text-xs font-semibold text-white/95 mb-1 tracking-wide">
-                      {pillar.title}
-                    </h3>
-                    <p className="font-sans text-[11px] text-white/50 leading-relaxed font-light">
-                      {pillar.desc}
+                    <p
+                      style={{
+                        fontFamily:
+                          'system-ui, sans-serif',
+                        fontSize: '0.7rem',
+                        fontWeight: 600,
+                        letterSpacing:
+                          '0.08em',
+                        color:
+                          'rgba(255,255,255,0.88)',
+                      }}
+                    >
+                      {value}
                     </p>
                   </div>
-                </div>
-              ))}
+                )
+              )}
             </div>
           </div>
         </section>
 
-        {/* ══════════════════════════════════════════════════════════════
-            SECTION 4: VIP PREMIERE RESERVATION
-        ══════════════════════════════════════════════════════════════ */}
+        {/* ══ SECTION 3: CRAFTSMANSHIP ══════════════════════════════════ */}
+        <section
+          id="craftsmanship"
+          style={{
+            minHeight: '100dvh',
+            width: '100%',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+            background: '#070708',
+          }}
+        >
+          <div
+            style={{
+              padding:
+                '0 1.5rem 2.5rem',
+              opacity: craftOpacity,
+              transform: `translateY(${
+                (1 - craftOpacity) * 20
+              }px)`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '0.52rem',
+                letterSpacing: '0.3em',
+                textTransform: 'uppercase',
+                color:
+                  'rgba(255,255,255,0.35)',
+                marginBottom: '0.4rem',
+              }}
+            >
+              CRAFTSMANSHIP
+            </p>
+
+            <h2
+              style={{
+                fontFamily:
+                  'Georgia, serif',
+                fontSize:
+                  'clamp(1.5rem, 5.5vw, 2rem)',
+                fontWeight: 300,
+                color:
+                  'rgba(255,255,255,0.92)',
+                marginBottom: '0.55rem',
+                lineHeight: 1.2,
+              }}
+            >
+              Crafted With Intent
+            </h2>
+
+            <p
+              style={{
+                fontFamily:
+                  'system-ui, sans-serif',
+                fontSize: '0.72rem',
+                color:
+                  'rgba(255,255,255,0.42)',
+                lineHeight: 1.65,
+                marginBottom: '1.25rem',
+                fontWeight: 300,
+              }}
+            >
+              Every surface, proportion and interface is considered before the first movement begins.
+            </p>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.6rem',
+              }}
+            >
+              {[
+                {
+                  num: '01',
+                  title:
+                    'FORGED TITANIUM CASE',
+                  body:
+                    'Grade 5 titanium, machined to within 0.01mm. Hand-satin finished bevels.',
+                },
+                {
+                  num: '02',
+                  title:
+                    'DOUBLE-DOMED SAPPHIRE',
+                  body:
+                    '9H hardness, zero-distortion geometry, dual-sided anti-reflective coating.',
+                },
+                {
+                  num: '03',
+                  title:
+                    'CALIBRE A01 MOVEMENT',
+                  body:
+                    'In-house automatic engine with 72-hour power reserve.',
+                },
+              ].map(
+                ({
+                  num,
+                  title,
+                  body,
+                }) => (
+                  <div
+                    key={num}
+                    style={{
+                      borderTop:
+                        '1px solid rgba(255,255,255,0.09)',
+                      paddingTop:
+                        '0.65rem',
+                      display: 'flex',
+                      gap: '0.85rem',
+                      alignItems:
+                        'flex-start',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily:
+                          'monospace',
+                        fontSize: '0.52rem',
+                        color:
+                          'rgba(255,255,255,0.28)',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {num}
+                    </span>
+
+                    <div>
+                      <p
+                        style={{
+                          fontFamily:
+                            'system-ui, sans-serif',
+                          fontSize: '0.62rem',
+                          fontWeight: 600,
+                          letterSpacing:
+                            '0.16em',
+                          textTransform:
+                            'uppercase',
+                          color:
+                            'rgba(255,255,255,0.88)',
+                          marginBottom:
+                            '0.2rem',
+                        }}
+                      >
+                        {title}
+                      </p>
+
+                      <p
+                        style={{
+                          fontFamily:
+                            'system-ui, sans-serif',
+                          fontSize: '0.68rem',
+                          color:
+                            'rgba(255,255,255,0.42)',
+                          lineHeight: 1.6,
+                          fontWeight: 300,
+                        }}
+                      >
+                        {body}
+                      </p>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* ══ SECTION 4: VIP PREMIERE ═══════════════════════════════════ */}
         <section
           id="coming-soon"
-          className="min-h-[100dvh] w-full flex flex-col items-center justify-end px-6 pb-14 text-center relative bg-[#040406]"
+          style={{
+            minHeight: '100dvh',
+            width: '100%',
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            paddingTop: '4.5rem',
+            background: '#030303',
+            textAlign: 'center',
+          }}
         >
-          <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
-            <span className="font-mono text-[9px] tracking-[0.32em] uppercase text-blue-200/80 border border-blue-400/25 bg-blue-500/10 px-3.5 py-1.5 rounded-full mb-4">
-              LIMITED PRODUCTION · 250 PIECES
-            </span>
+          <div
+            style={{
+              padding: '0 1.5rem',
+              width: '100%',
+              maxWidth: 340,
+              opacity: vipOpacity,
+              transform: `translateY(${
+                (1 - vipOpacity) * 20
+              }px)`,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '0.52rem',
+                letterSpacing: '0.3em',
+                textTransform: 'uppercase',
+                color:
+                  'rgba(255,255,255,0.35)',
+                marginBottom: '0.65rem',
+              }}
+            >
+              ATHENA HOROLOGY
+            </p>
 
-            <h2 className="text-3xl sm:text-4xl font-light text-white mb-1.5 leading-tight">
+            <h2
+              style={{
+                fontFamily:
+                  'Georgia, serif',
+                fontSize:
+                  'clamp(1.9rem, 7vw, 2.6rem)',
+                fontWeight: 300,
+                color:
+                  'rgba(255,255,255,0.92)',
+                marginBottom: '0.35rem',
+                lineHeight: 1.1,
+              }}
+            >
               Coming Soon
             </h2>
-            <p className="font-mono text-[10px] tracking-[0.28em] uppercase text-white/45 mb-6">
+
+            <p
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '0.58rem',
+                letterSpacing: '0.25em',
+                textTransform: 'uppercase',
+                color:
+                  'rgba(255,255,255,0.35)',
+                marginBottom: '1.75rem',
+              }}
+            >
               Autumn 2026 Premiere
             </p>
 
             {emailSubmitted ? (
-              <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-5 flex flex-col items-center gap-2 shadow-2xl animate-in zoom-in-95 duration-300">
-                <div className="w-9 h-9 rounded-full bg-emerald-400/20 flex items-center justify-center text-emerald-300 text-base">
+              <div
+                style={{
+                  background:
+                    'rgba(52,211,153,0.08)',
+                  border:
+                    '1px solid rgba(52,211,153,0.3)',
+                  borderRadius: 16,
+                  padding: '1.25rem',
+                  display: 'flex',
+                  flexDirection:
+                    'column',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background:
+                      'rgba(52,211,153,0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent:
+                      'center',
+                    color: '#6ee7b7',
+                    fontSize: '1rem',
+                  }}
+                >
                   ✓
                 </div>
-                <p className="font-sans text-sm font-semibold text-white">
+
+                <p
+                  style={{
+                    fontFamily:
+                      'system-ui, sans-serif',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    color: '#fff',
+                  }}
+                >
                   VIP Access Confirmed
                 </p>
-                <p className="font-sans text-xs text-white/60 leading-relaxed">
-                  You have been placed on the private allocation register. Exclusive allocation details will be sent prior to public release.
+
+                <p
+                  style={{
+                    fontFamily:
+                      'system-ui, sans-serif',
+                    fontSize: '0.68rem',
+                    color:
+                      'rgba(255,255,255,0.5)',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  You have been placed on the private allocation register.
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleSubscribe} className="flex flex-col gap-3 w-full">
+              <form
+                onSubmit={handleSubscribe}
+                style={{
+                  display: 'flex',
+                  flexDirection:
+                    'column',
+                  gap: '0.65rem',
+                  width: '100%',
+                }}
+              >
                 <input
                   type="email"
                   value={emailValue}
-                  onChange={(e) => setEmailValue(e.target.value)}
-                  placeholder="Enter email for private allocation"
+                  onChange={(e) =>
+                    setEmailValue(
+                      e.target.value
+                    )
+                  }
+                  placeholder="Enter email for private access"
                   required
-                  className="w-full bg-white/[0.06] border border-white/15 rounded-full px-5 py-3.5 text-xs text-white text-center placeholder-white/35 outline-none focus:border-white/40 font-sans transition-all shadow-inner"
+                  style={{
+                    width: '100%',
+                    boxSizing:
+                      'border-box',
+                    background:
+                      'rgba(255,255,255,0.05)',
+                    border:
+                      '1px solid rgba(255,255,255,0.14)',
+                    borderRadius: 9999,
+                    padding:
+                      '0.8rem 1.5rem',
+                    fontSize: '0.72rem',
+                    fontFamily:
+                      'system-ui, sans-serif',
+                    color: '#fff',
+                    outline: 'none',
+                    textAlign: 'center',
+                    letterSpacing:
+                      '0.04em',
+                  }}
                 />
+
                 <button
                   type="submit"
-                  className="w-full bg-white text-black py-3.5 rounded-full font-sans text-xs font-bold tracking-[0.24em] uppercase cursor-pointer active:scale-95 shadow-[0_10px_30px_rgba(255,255,255,0.22)] transition-all"
+                  style={{
+                    width: '100%',
+                    padding: '0.85rem',
+                    borderRadius: 9999,
+                    background:
+                      'rgba(255,255,255,0.92)',
+                    color: '#050507',
+                    border: 'none',
+                    fontSize: '0.62rem',
+                    fontFamily:
+                      'system-ui, sans-serif',
+                    fontWeight: 700,
+                    letterSpacing:
+                      '0.2em',
+                    textTransform:
+                      'uppercase',
+                    cursor: 'pointer',
+                    boxShadow:
+                      '0 8px 24px rgba(255,255,255,0.18)',
+                  }}
                 >
-                  REQUEST ACCESS
+                  Notify Me
                 </button>
               </form>
             )}
 
-            <div className="w-16 h-px bg-white/15 my-8" />
-
-            <p className="font-mono text-[9px] tracking-[0.32em] uppercase text-white/30">
-              ATHENA HOROLOGY · GENÈVE · SWISS CALIBRE A01
+            <p
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '0.48rem',
+                letterSpacing: '0.3em',
+                textTransform: 'uppercase',
+                color:
+                  'rgba(255,255,255,0.18)',
+                marginTop: '3rem',
+              }}
+            >
+              ATHENA HOROLOGY · GENÈVE
             </p>
           </div>
         </section>

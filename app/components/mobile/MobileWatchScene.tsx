@@ -146,13 +146,14 @@ export function MobileWatchScene({
   }, [hourHand, minuteHand, secondHand, onModelReady]);
 
   const animTime = useRef(0);
-  const smoothProgress = useRef(0);
+  const smoothProgress = useRef(scrollProgress);
+  const isFirstFrame = useRef(true);
   const floatTime = useRef(0);
   const smoothInspectX = useRef(0);
   const smoothInspectY = useRef(0);
 
-  // Active pose tracking
-  const activePose = useRef<MobileWatchPose>(getMobilePoseForScroll(0, 0));
+  // Active pose tracking initialized to the current scroll progress
+  const activePose = useRef<MobileWatchPose>(getMobilePoseForScroll(scrollProgress, 0));
 
   // Direct section-to-section navigation state
   const navTransition = useRef<{
@@ -259,11 +260,16 @@ export function MobileWatchScene({
       }
     } else {
       // Normal continuous scroll tracking
-      smoothProgress.current = THREE.MathUtils.lerp(
-        smoothProgress.current,
-        scrollProgress,
-        1 - Math.pow(0.001, delta)
-      );
+      if (isFirstFrame.current) {
+        smoothProgress.current = scrollProgress;
+        isFirstFrame.current = false;
+      } else {
+        smoothProgress.current = THREE.MathUtils.lerp(
+          smoothProgress.current,
+          scrollProgress,
+          1 - Math.pow(0.001, delta)
+        );
+      }
       pose = getMobilePoseForScroll(smoothProgress.current, t);
     }
 

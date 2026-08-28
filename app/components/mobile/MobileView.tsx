@@ -37,10 +37,23 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const velocityY = useRef(0);
   const lastDragY = useRef(0);
 
-  // Lenis Smooth Scroll Engine
+  // Lenis Smooth Scroll Engine with scroll restoration across page reloads
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    // Restore saved scroll position from sessionStorage if present
+    const savedScroll = sessionStorage.getItem('athena_mobile_scroll');
+    if (savedScroll) {
+      const parsed = parseFloat(savedScroll);
+      if (!isNaN(parsed) && parsed > 0) {
+        el.scrollTop = parsed;
+        const maxScroll = el.scrollHeight - el.clientHeight;
+        if (maxScroll > 0) {
+          setScrollProgress((parsed / maxScroll) * 3.0);
+        }
+      }
+    }
 
     const lenis = new Lenis({
       wrapper: el,
@@ -55,11 +68,20 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
 
     lenisRef.current = lenis;
 
+    if (savedScroll) {
+      const parsed = parseFloat(savedScroll);
+      if (!isNaN(parsed) && parsed > 0) {
+        lenis.scrollTo(parsed, { immediate: true });
+      }
+    }
+
     const onLenisScroll = (e: { scroll: number; limit: number }) => {
       if (isInspecting) return;
       const maxScroll = e.limit || (el.scrollHeight - el.clientHeight);
       if (maxScroll <= 0) return;
-      setScrollProgress((e.scroll / maxScroll) * 3.0);
+      const sp = (e.scroll / maxScroll) * 3.0;
+      setScrollProgress(sp);
+      sessionStorage.setItem('athena_mobile_scroll', e.scroll.toString());
     };
 
     lenis.on('scroll', onLenisScroll);
@@ -91,7 +113,9 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     if (!el) return;
     const maxScroll = el.scrollHeight - el.clientHeight;
     if (maxScroll <= 0) return;
-    setScrollProgress((el.scrollTop / maxScroll) * 3.0);
+    const sp = (el.scrollTop / maxScroll) * 3.0;
+    setScrollProgress(sp);
+    sessionStorage.setItem('athena_mobile_scroll', el.scrollTop.toString());
   };
 
   // Direct section navigation with smooth coordinated 3D trajectory

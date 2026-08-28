@@ -1,18 +1,18 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useFrame, ThreeElements } from '@react-three/fiber';
+import React, { useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { smoothstep } from '@/lib/math';
 import { START_HOUR, START_MINUTE, START_SECOND } from '@/lib/constants';
 import {
   HandQuaternions,
   applyHandRotations,
   updateWatchHandsAnimation,
 } from '@/lib/clockEngine';
+import { smoothstep } from '@/lib/math';
 
-export interface WatchPose {
+export interface MobileWatchPose {
   posX: number;
   posY: number;
   posZ: number;
@@ -23,71 +23,72 @@ export interface WatchPose {
 }
 
 /**
- * Calculates the exact 3D pose for a given scroll position
+ * Calculates the exact 3D pose for a given mobile scroll progress
  */
-export function getPoseForScroll(sp: number, t: number = 0): WatchPose {
-  const pSec2 = smoothstep(0.3, 1.0, sp);
-  const pSec3 = smoothstep(1.2, 2.0, sp);
-  const pSec4 = smoothstep(2.2, 3.0, sp);
+export function getMobilePoseForScroll(sp: number, t: number = 0): MobileWatchPose {
+  const p12 = smoothstep(0.3, 1.0, sp); // Hero → Specs
+  const p23 = smoothstep(1.3, 2.0, sp); // Specs → Craft
+  const p34 = smoothstep(2.3, 3.0, sp); // Craft → VIP
 
-  const idleFloat = Math.sin(t * 0.8) * 0.015 * (1 - pSec2);
+  const idleFloat = Math.sin(t * 0.85) * 0.012 * (1 - p12);
 
-  // X Position Target Mapping
-  let posX = 0;
-  if (sp < 1.0) {
-    posX = THREE.MathUtils.lerp(0.0, -0.65, pSec2);
-  } else if (sp >= 1.0 && sp < 2.0) {
-    posX = THREE.MathUtils.lerp(-0.65, 0.62, pSec3);
-  } else {
-    posX = THREE.MathUtils.lerp(0.62, 0.0, pSec4);
+  // Y Position: watch always inside camera frustum
+  let posY = 0.06 + idleFloat;
+  if (p12 > 0) {
+    posY = THREE.MathUtils.lerp(0.06, 0.26, p12);
+  }
+  if (p23 > 0) {
+    posY = THREE.MathUtils.lerp(0.26, 0.22, p23);
+  }
+  if (p34 > 0) {
+    posY = THREE.MathUtils.lerp(0.22, 0.05, p34);
   }
 
-  // Y Position
-  let posY = -0.05 + idleFloat;
-  if (sp >= 2.0) {
-    posY = THREE.MathUtils.lerp(-0.05, -0.35, pSec4);
+  // Rotation
+  const rotX = THREE.MathUtils.lerp(-0.25, -0.12, p12);
+
+  let rotY = THREE.MathUtils.lerp(0.0, -0.3, p12);
+  if (p23 > 0) {
+    rotY = THREE.MathUtils.lerp(-0.3, 0.42, p23);
+  }
+  if (p34 > 0) {
+    rotY = THREE.MathUtils.lerp(0.42, 0.0, p34);
   }
 
-  // Rotation Mapping
-  const rotX = THREE.MathUtils.lerp(-0.30, -0.20, pSec2);
-  let rotY = THREE.MathUtils.lerp(0.0, -0.55, pSec2);
-  if (sp >= 1.0) {
-    rotY = THREE.MathUtils.lerp(-0.55, 0.65, pSec3);
-  }
-
-  // Scale Mapping
-  let scale = THREE.MathUtils.lerp(2.75, 1.85, pSec2);
-  if (sp >= 2.0) {
-    scale = THREE.MathUtils.lerp(1.85, 1.20, pSec4);
+  // Scale
+  let scale = THREE.MathUtils.lerp(2.1, 1.35, p12);
+  if (p34 > 0) {
+    scale = THREE.MathUtils.lerp(1.35, 1.0, p34);
   }
 
   return {
-    posX,
+    posX: 0,
     posY,
-    posZ: THREE.MathUtils.lerp(0.0, 0.20, pSec2),
+    posZ: THREE.MathUtils.lerp(0, 0.1, p12),
     rotX,
-    rotY: rotY + Math.sin(t * 0.4) * 0.01,
-    rotZ: THREE.MathUtils.lerp(0.0, -0.05, pSec2),
+    rotY: rotY + Math.sin(t * 0.4) * 0.012,
+    rotZ: THREE.MathUtils.lerp(0, -0.02, p12),
     scale,
   };
 }
 
-export type WatchModelProps = ThreeElements['group'] & {
-  scrollRaw: number;
+export interface MobileWatchSceneProps {
+  scrollProgress: number;
+  isInspecting: boolean;
+  inspectRot: { x: number; y: number };
   isLoaderComplete: boolean;
   onModelReady?: () => void;
   navTarget?: { targetScroll: number; timestamp: number } | null;
-};
+}
 
-export function WatchModel({
-  scrollRaw,
+export function MobileWatchScene({
+  scrollProgress,
+  isInspecting,
+  inspectRot,
   isLoaderComplete,
   onModelReady,
   navTarget,
-  ...props
-}: WatchModelProps) {
-  const [mounted, setMounted] = useState(false);
-
+}: MobileWatchSceneProps) {
   const { scene } = useGLTF('/models/AthenaWatch.glb');
   const groupRef = useRef<THREE.Group>(null);
 
@@ -95,7 +96,8 @@ export function WatchModel({
   const minuteHand = scene.getObjectByName('HandMinute') as THREE.Object3D | undefined;
   const secondHand = scene.getObjectByName('HandSecond') as THREE.Object3D | undefined;
 
-  useEffect(() => {
+  // Center model geometry once across all mounts
+  React.useEffect(() => {
     if (!scene || scene.userData.centered) return;
     const box = new THREE.Box3().setFromObject(scene);
     scene.position.sub(box.getCenter(new THREE.Vector3()));
@@ -119,7 +121,8 @@ export function WatchModel({
       minute: minuteHand.userData.initialQuaternion.clone(),
       second: secondHand.userData.initialQuaternion.clone(),
     };
-    // Initialize immediately in the 10:10:30 catalog pose
+
+    // Apply exact 10:10:30 starting catalog pose
     applyHandRotations(
       START_HOUR,
       START_MINUTE,
@@ -129,8 +132,7 @@ export function WatchModel({
     );
   }
 
-  useEffect(() => {
-    setMounted(true);
+  React.useEffect(() => {
     if (initQ.current && hourHand && minuteHand && secondHand) {
       applyHandRotations(
         START_HOUR,
@@ -143,18 +145,20 @@ export function WatchModel({
     }
   }, [hourHand, minuteHand, secondHand, onModelReady]);
 
-  const smoothRaw = useRef(0);
+  const animTime = useRef(0);
+  const smoothProgress = useRef(scrollProgress);
   const isFirstFrame = useRef(true);
   const floatTime = useRef(0);
-  const animTime = useRef(0);
+  const smoothInspectX = useRef(0);
+  const smoothInspectY = useRef(0);
 
-  // Active pose tracking
-  const activePose = useRef<WatchPose>(getPoseForScroll(0, 0));
+  // Active pose tracking initialized to the current scroll progress
+  const activePose = useRef<MobileWatchPose>(getMobilePoseForScroll(scrollProgress, 0));
 
   // Direct section-to-section navigation state
   const navTransition = useRef<{
     isNavigating: boolean;
-    startPose: WatchPose;
+    startPose: MobileWatchPose;
     targetScroll: number;
     startTime: number;
     duration: number;
@@ -163,7 +167,7 @@ export function WatchModel({
     startPose: { ...activePose.current },
     targetScroll: 0,
     startTime: 0,
-    duration: 1600,
+    duration: 1400,
   });
 
   const prevNavTimestamp = useRef(0);
@@ -174,14 +178,14 @@ export function WatchModel({
       startPose: { ...activePose.current },
       targetScroll: navTarget.targetScroll,
       startTime: performance.now(),
-      duration: 1600,
+      duration: 1400,
     };
   }
 
   useFrame((_, delta) => {
-    if (!mounted || !initQ.current || !groupRef.current) return;
+    if (!initQ.current || !groupRef.current) return;
 
-    // Time calibration animation
+    // Watch hand animation
     if (isLoaderComplete) {
       animTime.current += delta;
       updateWatchHandsAnimation(
@@ -202,16 +206,38 @@ export function WatchModel({
     floatTime.current += delta;
     const t = floatTime.current;
 
-    let pose: WatchPose;
+    // 360° Tactile Inspection Mode
+    if (isInspecting) {
+      navTransition.current.isNavigating = false;
+      smoothInspectX.current = THREE.MathUtils.lerp(smoothInspectX.current, inspectRot.x, 0.12);
+      smoothInspectY.current = THREE.MathUtils.lerp(smoothInspectY.current, inspectRot.y, 0.12);
+      groupRef.current.position.set(0, 0.0, 0);
+      groupRef.current.rotation.x = -0.15 + smoothInspectX.current;
+      groupRef.current.rotation.y = smoothInspectY.current;
+      groupRef.current.rotation.z = 0;
+      groupRef.current.scale.setScalar(2.05);
+      activePose.current = {
+        posX: 0,
+        posY: 0,
+        posZ: 0,
+        rotX: -0.15 + smoothInspectX.current,
+        rotY: smoothInspectY.current,
+        rotZ: 0,
+        scale: 2.05,
+      };
+      return;
+    }
 
-    // Direct Section-to-Section Navigation Trajectory
+    let pose: MobileWatchPose;
+
+    // Direct Section-to-Section Navigation Trajectory (eliminates zig-zag)
     if (navTransition.current.isNavigating) {
       const elapsed = performance.now() - navTransition.current.startTime;
       const progress = Math.min(1, elapsed / navTransition.current.duration);
       const ease = Math.min(1, 1.001 - Math.pow(2, -10 * progress));
 
       const start = navTransition.current.startPose;
-      const target = getPoseForScroll(navTransition.current.targetScroll, t);
+      const target = getMobilePoseForScroll(navTransition.current.targetScroll, t);
 
       pose = {
         posX: THREE.MathUtils.lerp(start.posX, target.posX, ease),
@@ -223,8 +249,8 @@ export function WatchModel({
         scale: THREE.MathUtils.lerp(start.scale, target.scale, ease),
       };
 
-      smoothRaw.current = THREE.MathUtils.lerp(
-        smoothRaw.current,
+      smoothProgress.current = THREE.MathUtils.lerp(
+        smoothProgress.current,
         navTransition.current.targetScroll,
         ease
       );
@@ -235,36 +261,28 @@ export function WatchModel({
     } else {
       // Normal continuous scroll tracking
       if (isFirstFrame.current) {
-        smoothRaw.current = scrollRaw;
+        smoothProgress.current = scrollProgress;
         isFirstFrame.current = false;
       } else {
-        smoothRaw.current = THREE.MathUtils.lerp(
-          smoothRaw.current,
-          scrollRaw,
-          1 - Math.pow(0.0005, delta)
+        smoothProgress.current = THREE.MathUtils.lerp(
+          smoothProgress.current,
+          scrollProgress,
+          1 - Math.pow(0.001, delta)
         );
       }
-      pose = getPoseForScroll(smoothRaw.current, t);
+      pose = getMobilePoseForScroll(smoothProgress.current, t);
     }
 
     activePose.current = pose;
 
-    groupRef.current.position.x = pose.posX;
-    groupRef.current.position.y = pose.posY;
-    groupRef.current.position.z = pose.posZ;
-
-    groupRef.current.rotation.x = pose.rotX;
-    groupRef.current.rotation.y = pose.rotY;
-    groupRef.current.rotation.z = pose.rotZ;
-
-    groupRef.current.scale.set(pose.scale, pose.scale, pose.scale);
+    groupRef.current.position.set(pose.posX, pose.posY, pose.posZ);
+    groupRef.current.rotation.set(pose.rotX, pose.rotY, pose.rotZ);
+    groupRef.current.scale.setScalar(pose.scale);
   });
 
   return (
-    <group ref={groupRef} {...props} dispose={null}>
+    <group ref={groupRef} dispose={null}>
       <primitive object={scene} />
     </group>
   );
 }
-
-useGLTF.preload('/models/AthenaWatch.glb');

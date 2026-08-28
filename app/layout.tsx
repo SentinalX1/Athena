@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: "Athena Horology — A01 Calibre",
-  description: "A high-fidelity interactive 3D luxury watch showcase. Engineered for desktop.",
+  description: "A high-fidelity interactive 3D luxury watch showcase. Swiss automatic engineering in pure mechanical restraint.",
 };
 
 export default function RootLayout({

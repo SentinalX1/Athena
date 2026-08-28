@@ -48,7 +48,7 @@ Athena is a scroll-driven luxury product showcase for the Athena A01 — a Swiss
 │       │   ├── KineticFramePlayer.tsx    # GPU ImageBitmap 60fps canvas player
 │       │   └── AthenaLoadingScreen.tsx   # Iris Aperture reveal overlay
 │       ├── mobile/
-│       │   └── MobileFallbackScreen.tsx  # Desktop advisory screen
+│       │   └── MobileView.tsx            # 3D Hybrid mobile scroll & 360° inspection
 │       ├── watch/
 │       │   └── WatchModel.tsx            # 3D glTF watch + scroll keyframing
 │       └── sections/

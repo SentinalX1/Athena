@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, Suspense } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
+import Lenis from 'lenis';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { useGLTF, Environment } from '@react-three/drei';
 import * as THREE from 'three';
@@ -224,10 +225,62 @@ export function MobileView({
   const [emailSubmitted, setEmailSubmitted] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
   const isDragging = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
   const velocityY = useRef(0);
   const lastDragY = useRef(0);
+
+  // ── Lenis Smooth Scroll Engine for Mobile ──
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const lenis = new Lenis({
+      wrapper: el,
+      content: (el.firstElementChild as HTMLElement) || el,
+      duration: 1.2,
+      easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      orientation: 'vertical',
+      gestureOrientation: 'vertical',
+      smoothWheel: true,
+      touchMultiplier: 1.8,
+    });
+
+    lenisRef.current = lenis;
+
+    const onLenisScroll = (e: { scroll: number; limit: number }) => {
+      if (isInspecting) return;
+      const maxScroll = e.limit || (el.scrollHeight - el.clientHeight);
+      if (maxScroll <= 0) return;
+      setScrollProgress((e.scroll / maxScroll) * 3.0);
+    };
+
+    lenis.on('scroll', onLenisScroll);
+
+    let rafId: number;
+    function raf(time: number) {
+      lenis.raf(time);
+      rafId = requestAnimationFrame(raf);
+    }
+    rafId = requestAnimationFrame(raf);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, []);
+
+  // Pause / resume Lenis on inspection mode
+  useEffect(() => {
+    if (!lenisRef.current) return;
+    if (isInspecting) {
+      lenisRef.current.stop();
+    } else {
+      lenisRef.current.start();
+    }
+  }, [isInspecting]);
 
   const handleScroll = () => {
     if (isInspecting) return;
@@ -250,11 +303,18 @@ export function MobileView({
     setMenuOpen(false);
     setIsInspecting(false);
 
-    containerRef.current
-      ?.querySelector(id)
-      ?.scrollIntoView({
-        behavior: 'smooth',
+    if (lenisRef.current) {
+      lenisRef.current.scrollTo(id, {
+        duration: 1.4,
+        easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       });
+    } else {
+      containerRef.current
+        ?.querySelector(id)
+        ?.scrollIntoView({
+          behavior: 'smooth',
+        });
+    }
   };
 
   const startInspect = () => {
@@ -368,10 +428,29 @@ export function MobileView({
       onPointerLeave={handlePointerUp}
     >
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          360° INSPECTION BACKGROUND BLUR
+          Blurs the sections and backgrounds behind the 3D watch
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 35,
+          backdropFilter: isInspecting ? 'blur(22px)' : 'none',
+          WebkitBackdropFilter: isInspecting ? 'blur(22px)' : 'none',
+          background: isInspecting ? 'rgba(5, 5, 7, 0.72)' : 'transparent',
+          opacity: isInspecting ? 1 : 0,
+          pointerEvents: 'none',
+          transition: 'opacity 0.4s ease, backdrop-filter 0.4s ease, background 0.4s ease',
+        }}
+      />
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           FIXED 3D CANVAS
 
           IMPORTANT:
           - zIndex 15 keeps the watch visually ABOVE sections
+          - zIndex 50 during inspection places watch ABOVE the backdrop blur
           - pointerEvents none allows touch/scroll gestures
             to pass through to the scroll container
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
@@ -380,8 +459,8 @@ export function MobileView({
           position: 'fixed',
           inset: 0,
 
-          // Watch visually above scroll sections
-          zIndex: isInspecting ? 45 : 15,
+          // Watch visually above scroll sections (and above backdrop blur when inspecting)
+          zIndex: isInspecting ? 50 : 15,
 
           // CRITICAL:
           // The canvas never captures scrolling/touch input
@@ -719,14 +798,13 @@ export function MobileView({
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           360° INSPECTION OVERLAY
-          No backdrop blur or dark background.
       ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isInspecting && (
         <div
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 50,
+            zIndex: 60,
             pointerEvents: 'auto',
             display: 'flex',
             flexDirection: 'column',
@@ -735,6 +813,10 @@ export function MobileView({
               '4.5rem 1.5rem 2.5rem',
             touchAction: 'none',
           }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
           {/* Top Instruction Pill */}
           <div
@@ -942,14 +1024,13 @@ export function MobileView({
                   0,
                   heroTextOpacity
                 ),
-              transform: `translateY(${
-                (1 -
+              transform: `translateY(${(1 -
                   Math.max(
                     0,
                     heroTextOpacity
                   )) *
                 20
-              }px)`,
+                }px)`,
             }}
           >
             {/* Eyebrow */}
@@ -1120,9 +1201,8 @@ export function MobileView({
               padding:
                 '0 1.5rem 2.5rem',
               opacity: specsOpacity,
-              transform: `translateY(${
-                (1 - specsOpacity) * 20
-              }px)`,
+              transform: `translateY(${(1 - specsOpacity) * 20
+                }px)`,
             }}
           >
             <p
@@ -1280,9 +1360,8 @@ export function MobileView({
               padding:
                 '0 1.5rem 2.5rem',
               opacity: craftOpacity,
-              transform: `translateY(${
-                (1 - craftOpacity) * 20
-              }px)`,
+              transform: `translateY(${(1 - craftOpacity) * 20
+                }px)`,
             }}
           >
             <p
@@ -1456,9 +1535,8 @@ export function MobileView({
               width: '100%',
               maxWidth: 340,
               opacity: vipOpacity,
-              transform: `translateY(${
-                (1 - vipOpacity) * 20
-              }px)`,
+              transform: `translateY(${(1 - vipOpacity) * 20
+                }px)`,
             }}
           >
             <p

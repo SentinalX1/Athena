@@ -13,10 +13,9 @@ import { MobileSpecsSection } from './sections/MobileSpecsSection';
 import { MobileCraftsmanshipSection } from './sections/MobileCraftsmanshipSection';
 import { MobileComingSoonSection } from './sections/MobileComingSoonSection';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Mobile View — Orchestrator
-// Manages Lenis scroll, direct nav trajectory, inspection state, and gestures.
-// ─────────────────────────────────────────────────────────────────────────────
+// Manages Lenis scroll, inspection state, pointer gestures, and opacity math.
+
 interface MobileViewProps {
   isLoaderComplete: boolean;
   onWatchLoaded?: () => void;

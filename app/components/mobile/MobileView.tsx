@@ -13,9 +13,10 @@ import { MobileSpecsSection } from './sections/MobileSpecsSection';
 import { MobileCraftsmanshipSection } from './sections/MobileCraftsmanshipSection';
 import { MobileComingSoonSection } from './sections/MobileComingSoonSection';
 
+// ─────────────────────────────────────────────────────────────────────────────
 // Mobile View — Orchestrator
-// Manages Lenis scroll, inspection state, pointer gestures, and opacity math.
-
+// Manages Lenis scroll, direct nav trajectory, inspection state, and gestures.
+// ─────────────────────────────────────────────────────────────────────────────
 interface MobileViewProps {
   isLoaderComplete: boolean;
   onWatchLoaded?: () => void;
@@ -28,6 +29,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const [menuOpen, setMenuOpen] = useState(false);
   const [emailValue, setEmailValue] = useState('');
   const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [navTarget, setNavTarget] = useState<{ targetScroll: number; timestamp: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const lenisRef = useRef<Lenis | null>(null);
@@ -36,7 +38,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
   const velocityY = useRef(0);
   const lastDragY = useRef(0);
 
-  //  Lenis Smooth Scroll Engine 
+  // Lenis Smooth Scroll Engine
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -75,7 +77,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
       lenis.destroy();
       lenisRef.current = null;
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pause / resume Lenis when entering / exiting inspection
   useEffect(() => {
@@ -93,9 +95,18 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
     setScrollProgress((el.scrollTop / maxScroll) * 3.0);
   };
 
+  // Direct section navigation with smooth coordinated 3D trajectory
   const scrollToSection = (id: string) => {
     setMenuOpen(false);
     setIsInspecting(false);
+
+    let targetScrollRaw = 0;
+    if (id === '#timepiece') targetScrollRaw = 1.0;
+    else if (id === '#craftsmanship') targetScrollRaw = 2.0;
+    else if (id === '#coming-soon') targetScrollRaw = 3.0;
+    else if (id === '#hero') targetScrollRaw = 0.0;
+
+    setNavTarget({ targetScroll: targetScrollRaw, timestamp: performance.now() });
 
     if (lenisRef.current) {
       lenisRef.current.scrollTo(id, {
@@ -160,7 +171,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* Inspection backdrop blur*/}
+      {/* Inspection backdrop blur */}
       <div
         className="fixed inset-0 z-[35] pointer-events-none"
         style={{
@@ -172,16 +183,17 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         }}
       />
 
-      {/* Fixed 3D Canvas & lighting*/}
+      {/* Fixed 3D Canvas & lighting */}
       <MobileWatchCanvas
         scrollProgress={scrollProgress}
         isInspecting={isInspecting}
         inspectRot={inspectRot}
         isLoaderComplete={isLoaderComplete}
         onWatchLoaded={onWatchLoaded}
+        navTarget={navTarget}
       />
 
-      {/* Header & navigation drawer*/}
+      {/* Header & navigation drawer */}
       <MobileHeader
         isInspecting={isInspecting}
         menuOpen={menuOpen}
@@ -196,7 +208,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         onStartInspect={startInspect}
       />
 
-      {/* 360° inspection overlay*/}
+      {/* 360° inspection overlay */}
       <MobileInspectOverlay
         isInspecting={isInspecting}
         onEndInspect={endInspect}
@@ -205,11 +217,7 @@ export function MobileView({ isLoaderComplete, onWatchLoaded }: MobileViewProps)
         onPointerUp={handlePointerUp}
       />
 
-      {/* Scrollable sections
-          IMPORTANT:
-          - zIndex 10 sits BELOW the watch at z-index 15
-          - touchAction: pan-y explicitly allows vertical scroll gestures
-     */}
+      {/* Scrollable sections */}
       <div
         ref={containerRef}
         onScroll={handleScroll}

@@ -1,6 +1,6 @@
 # Athena Horology
 
-> A high-fidelity, interactive 3D luxury watch showcase — engineered for desktop.
+> A high-fidelity, interactive 3D luxury watch showcase.
 
 Built with **Next.js 16**, **Three.js (React Three Fiber)**, and **Lenis smooth scrolling**, Athena delivers a cinematic scroll-driven experience around the A01 Calibre timepiece.
 
